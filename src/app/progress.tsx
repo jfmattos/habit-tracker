@@ -2,7 +2,6 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { BarChart } from '@/components/bar-chart';
 import { HabitBadge } from '@/components/habit-badge';
 import { SegmentedControl } from '@/components/segmented-control';
 import { ThemedText } from '@/components/themed-text';
@@ -11,9 +10,10 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { textOn } from '@/lib/colors';
 import { addDays, dayLabel, daysBetween, parseKey, todayKey, weekStart } from '@/lib/dates';
-import { goalLabel, goalsMet } from '@/lib/goals';
+import { goalLabel, goalsMet, isSatisfied } from '@/lib/goals';
 import { countOn, isDone } from '@/lib/habit-logic';
 import {
+  activeDays,
   bestStreak,
   currentStreak,
   firstKey,
@@ -27,6 +27,7 @@ import { useHabits, type Habit } from '@/store/habits';
 
 /** Days added to the history each time "Show older days" is tapped */
 const HISTORY_PAGE = 14;
+const PERFECT = '#30A46C';
 const TABS = [
   { value: 'overview', label: '📊 Overview' },
   { value: 'history', label: '🗓️ History' },
@@ -68,25 +69,15 @@ function Overview({ habits }: { habits: Habit[] }) {
   const perfect = perfectDays(habits);
   const challengesWon = habits.reduce((sum, habit) => sum + habit.wins.length, 0);
   const goals = habits.reduce((sum, habit) => sum + goalsMet(habit), 0);
-  const trophyParts = [
-    `${challengesWon} ${challengesWon === 1 ? 'challenge' : 'challenges'}`,
-    `${perfect} perfect ${perfect === 1 ? 'day' : 'days'}`,
-    `${goals} ${goals === 1 ? 'goal' : 'goals'}`,
-  ];
 
   return (
     <>
+      <TrophyCase challenges={challengesWon} perfectDays={perfect} goals={goals} />
+
       <View style={styles.tiles}>
-        <Tile emoji="🌟" label="Perfect days" value={perfect} color="#30A46C" />
+        <Tile emoji="📅" label="Active days" value={activeDays(habits)} color="#30A46C" />
         <Tile emoji="✅" label="Check-ins" value={totalCheckIns(habits)} color="#3E63DD" />
         <Tile emoji="🔥" label="Best streak" value={Math.max(...habits.map(bestStreak))} color="#F76B15" />
-        <Tile
-          emoji="🏆"
-          label="Trophies"
-          value={challengesWon + perfect + goals}
-          detail={trophyParts.join(' + ')}
-          color="#D99A00"
-        />
       </View>
 
       <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} />
@@ -103,18 +94,7 @@ function Overview({ habits }: { habits: Habit[] }) {
           </View>
           <ThemedText style={styles.bigRate}>{Math.round(totals.rate * 100)}%</ThemedText>
         </View>
-        <DayChart habits={habits} days={period} />
-        <View style={styles.legend}>
-          {habits.map((habit) => (
-            <View key={habit.id} style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: habit.color }]} />
-              <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                {habit.emoji ? `${habit.emoji} ` : ''}
-                {habit.name}
-              </ThemedText>
-            </View>
-          ))}
-        </View>
+        <DayGrid habits={habits} days={period} />
       </ThemedView>
 
       <ThemedView type="backgroundElement" style={styles.panel}>
@@ -199,92 +179,137 @@ function History({ habits }: { habits: Habit[] }) {
 }
 
 /**
- * One stacked bar per day with a block per habit in its color: full blocks are habits done
- * that day, short tinted blocks are partly done multi-check-in habits.
+ * A habit-by-day grid: one row per habit (emoji, name and days done), one column per day.
+ * Filled cells are days done, tinted cells are partly done multi-check-in habits, and blank
+ * cells are days before the habit existed. Rows keep habits apart even when colors are alike.
  */
-function DayChart({ habits, days }: { habits: Habit[]; days: number }) {
+function DayGrid({ habits, days }: { habits: Habit[]; days: number }) {
   const theme = useTheme();
   const today = todayKey();
   const week = days <= 7;
   const keys = lastDays(days);
-  // Bottom-up stacking: the first habit sits at the bottom of each bar
-  const stack = [...habits].reverse();
+  const gap = week ? Spacing.one : 2;
+  const nameStyle = week ? styles.gridNameWeek : styles.gridNameMonth;
+
+  const labelStyle = (key: string) => [
+    styles.gridLabel,
+    key === today ? [{ color: theme.text }, styles.labelToday] : { color: theme.textSecondary },
+  ];
 
   return (
-    <View>
-      <View style={[styles.chart, { gap: week ? Spacing.two : 2 }]}>
-        {keys.map((key) => {
-          const done = habits.filter((habit) => isDone(habit, key)).length;
-          const perfect = done === habits.length;
-
-          return (
-            <View key={key} style={styles.column}>
-              {week && (
-                <Text style={[styles.columnTop, { color: perfect ? '#30A46C' : theme.textSecondary }]}>
-                  {perfect ? '⭐' : `${done}/${habits.length}`}
+    <View style={styles.grid}>
+      {/* Day header: weekday + date for a week; every 5th date (counting back from today) for a month */}
+      <View style={styles.gridRow}>
+        <View style={nameStyle} />
+        {week ? (
+          <View style={[styles.gridCells, { gap }]}>
+            {keys.map((key) => (
+              <View key={key} style={styles.gridHeaderCell}>
+                <Text style={labelStyle(key)}>
+                  {parseKey(key).toLocaleDateString(undefined, { weekday: 'narrow' })}
                 </Text>
-              )}
-              <View
-                style={[
-                  styles.slot,
-                  { height: week ? 140 : 110, backgroundColor: theme.backgroundSelected },
-                  perfect && !week && styles.perfectSlot,
-                ]}>
-                {stack.map((habit) => {
-                  const fraction = Math.min(1, countOn(habit, key) / habit.target);
-                  if (fraction === 0) return null;
-                  return (
-                    <View
-                      key={habit.id}
-                      style={{
-                        height: `${(fraction / habits.length) * 100}%`,
-                        backgroundColor: fraction === 1 ? habit.color : `${habit.color}59`,
-                      }}
-                    />
-                  );
-                })}
+                <Text style={labelStyle(key)}>{parseKey(key).getDate()}</Text>
               </View>
-              {week && (
-                <View style={styles.columnLabel}>
-                  <Text style={[styles.labelText, labelColor(key)]}>
-                    {parseKey(key).toLocaleDateString(undefined, { weekday: 'short' })}
-                  </Text>
-                  <Text style={[styles.labelText, labelColor(key)]}>{parseKey(key).getDate()}</Text>
-                </View>
-              )}
-            </View>
-          );
-        })}
+            ))}
+          </View>
+        ) : (
+          // Month columns are too narrow for their own labels, so each label is centered
+          // over its column on a free-standing row
+          <View style={[styles.gridCells, styles.gridMonthLabels]}>
+            {keys.map((key, index) =>
+              (days - 1 - index) % 5 === 0 ? (
+                <Text
+                  key={key}
+                  style={[
+                    labelStyle(key),
+                    styles.gridMonthLabel,
+                    { left: `${((index + 0.5) / days) * 100}%` },
+                  ]}>
+                  {parseKey(key).getDate()}
+                </Text>
+              ) : null
+            )}
+          </View>
+        )}
+        <View style={styles.gridCount} />
       </View>
 
-      {!week && (
-        // Bars are too narrow for their own labels, so every 5th date (counting back from
-        // today) is centered under its bar on a separate row
-        <View style={styles.monthLabels}>
-          {keys.map((key, index) =>
-            (days - 1 - index) % 5 === 0 ? (
-              <Text
-                key={key}
-                style={[
-                  styles.labelText,
-                  styles.monthLabel,
-                  { left: `${((index + 0.5) / days) * 100}%` },
-                  labelColor(key),
-                ]}>
-                {parseKey(key).getDate()}
-              </Text>
-            ) : null
-          )}
+      {habits.map((habit) => {
+        const first = firstKey(habit);
+        const done = keys.filter((key) => isDone(habit, key)).length;
+        return (
+          <View key={habit.id} style={styles.gridRow}>
+            <View style={[nameStyle, styles.gridName]}>
+              <HabitBadge habit={habit} size={22} />
+              {week && (
+                <ThemedText type="small" numberOfLines={1} style={styles.gridNameText}>
+                  {habit.name}
+                </ThemedText>
+              )}
+            </View>
+            <View style={[styles.gridCells, { gap }]}>
+              {keys.map((key) => {
+                const fraction = Math.min(1, countOn(habit, key) / habit.target);
+                const before = key < first;
+                return (
+                  <View
+                    key={key}
+                    style={[
+                      week ? styles.gridCellWeek : styles.gridCellMonth,
+                      {
+                        backgroundColor: before
+                          ? 'transparent'
+                          : fraction === 1
+                            ? habit.color
+                            : fraction > 0
+                              ? `${habit.color}59`
+                              : theme.backgroundSelected,
+                      },
+                      key === today && fraction < 1 && !before && { borderWidth: 1.5, borderColor: habit.color },
+                    ]}>
+                    {week && fraction === 1 && (
+                      <Text style={[styles.gridCheck, { color: textOn(habit.color) }]}>✓</Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={[styles.gridCount, styles.gridCountText, { color: habit.color }]}>
+              {done}/{days}
+            </Text>
+          </View>
+        );
+      })}
+
+      {/* Daily totals: how many habits were done, with a star for perfect days. The month view
+          only marks perfect days, so it hides the row when there are none */}
+      {(week || keys.some((key) => habits.every((habit) => isSatisfied(habit, key)))) && (
+      <View style={[styles.gridRow, styles.gridTotals, { borderTopColor: theme.backgroundSelected }]}>
+        <ThemedText type="small" themeColor="textSecondary" style={nameStyle}>
+          {week ? 'Done' : '⭐'}
+        </ThemedText>
+        <View style={[styles.gridCells, { gap }]}>
+          {keys.map((key) => {
+            const done = habits.filter((habit) => isDone(habit, key)).length;
+            const perfect = habits.every((habit) => isSatisfied(habit, key));
+            return (
+              <View key={key} style={styles.gridHeaderCell}>
+                {week ? (
+                  <Text style={[styles.gridLabel, { color: perfect ? PERFECT : theme.textSecondary }]}>
+                    {perfect ? '⭐' : `${done}/${habits.length}`}
+                  </Text>
+                ) : perfect ? (
+                  <View style={styles.perfectDot} />
+                ) : null}
+              </View>
+            );
+          })}
         </View>
+        <View style={styles.gridCount} />
+      </View>
       )}
     </View>
   );
-
-  function labelColor(key: string) {
-    return key === today
-      ? [{ color: theme.text }, styles.labelToday]
-      : { color: theme.textSecondary };
-  }
 }
 
 function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
@@ -330,7 +355,6 @@ function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
           🎯 {goalLabel(habit.goal)} · met {met}×
         </ThemedText>
       </View>
-      <BarChart bars={stats.bars.map((value) => ({ value }))} color={habit.color} height={24} />
     </Pressable>
   );
 }
@@ -378,34 +402,66 @@ function LogDay({ day, habits }: { day: string; habits: Habit[] }) {
   );
 }
 
-function Tile({
-  emoji,
-  label,
-  value,
-  color,
-  detail,
-}: {
-  emoji: string;
-  label: string;
-  value: number;
-  color: string;
-  detail?: string;
-}) {
+function Tile({ emoji, label, value, color }: { emoji: string; label: string; value: number; color: string }) {
   return (
     <ThemedView type="backgroundElement" style={styles.tile}>
       <View style={[styles.tileIcon, { backgroundColor: `${color}2E` }]}>
         <Text style={styles.tileEmoji}>{emoji}</Text>
       </View>
-      <View style={styles.tileText}>
-        <Text style={[styles.tileValue, { color }]}>{value}</Text>
-        <ThemedText type="small" themeColor="textSecondary">
-          {label}
-        </ThemedText>
-        {detail && (
-          <ThemedText themeColor="textSecondary" style={styles.tileDetail}>
-            {detail}
+      <Text style={[styles.tileValue, { color }]}>{value}</Text>
+      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+        {label}
+      </ThemedText>
+    </ThemedView>
+  );
+}
+
+const TROPHY_GOLD = '#D99A00';
+
+/** Total trophies, broken down by where they came from */
+function TrophyCase({
+  challenges,
+  perfectDays,
+  goals,
+}: {
+  challenges: number;
+  perfectDays: number;
+  goals: number;
+}) {
+  const theme = useTheme();
+  const sources = [
+    { emoji: '🏁', label: 'Challenges', value: challenges },
+    { emoji: '🌟', label: 'Perfect days', value: perfectDays },
+    { emoji: '🎯', label: 'Goals met', value: goals },
+  ];
+
+  return (
+    <ThemedView type="backgroundElement" style={styles.panel}>
+      <View style={styles.trophyHeader}>
+        <View style={[styles.tileIcon, { backgroundColor: `${TROPHY_GOLD}2E` }]}>
+          <Text style={styles.tileEmoji}>🏆</Text>
+        </View>
+        <View style={styles.panelHeading}>
+          <ThemedText type="smallBold" style={styles.panelTitle}>
+            Trophies
           </ThemedText>
-        )}
+          <ThemedText type="small" themeColor="textSecondary">
+            Every win counts
+          </ThemedText>
+        </View>
+        <Text style={[styles.trophyTotal, { color: TROPHY_GOLD }]}>{challenges + perfectDays + goals}</Text>
+      </View>
+      <View style={styles.trophySources}>
+        {sources.map((source) => (
+          <View key={source.label} style={[styles.trophySource, { backgroundColor: theme.backgroundSelected }]}>
+            <Text style={styles.trophySourceValue}>
+              {source.emoji} <Text style={{ color: theme.text }}>{source.value}</Text>
+            </Text>
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+              {source.label}
+            </ThemedText>
+          </View>
+        ))}
       </View>
     </ThemedView>
   );
@@ -428,34 +484,30 @@ const styles = StyleSheet.create({
   },
   tiles: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: Spacing.two,
   },
   tile: {
-    flexGrow: 1,
-    flexBasis: '40%',
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
-    gap: Spacing.three,
-    padding: Spacing.three,
+    gap: Spacing.one,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.two,
     borderRadius: Spacing.three,
   },
   tileIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tileEmoji: {
-    fontSize: 22,
+    fontSize: 20,
   },
-  tileText: {
-    flexShrink: 1,
-  },
-  tileDetail: {
-    fontSize: 11,
-    lineHeight: 14,
+  tileValue: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: 700,
   },
   more: {
     alignItems: 'center',
@@ -468,11 +520,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: Spacing.three,
   },
-  tileValue: {
-    fontSize: 26,
-    lineHeight: 30,
+  trophyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  trophyTotal: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: 800,
+  },
+  trophySources: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  trophySource: {
+    flex: 1,
+    alignItems: 'center',
+    gap: Spacing.half,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+  },
+  trophySourceValue: {
+    fontSize: 18,
     fontWeight: 700,
   },
+
   panel: {
     gap: Spacing.three,
     padding: Spacing.three,
@@ -496,64 +569,86 @@ const styles = StyleSheet.create({
     fontWeight: 700,
     color: '#30A46C',
   },
-  chart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+  grid: {
+    gap: Spacing.two,
   },
-  column: {
-    flex: 1,
-    alignItems: 'stretch',
+  gridRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  gridNameWeek: {
+    width: 104,
+  },
+  gridNameMonth: {
+    width: 22,
+  },
+  gridName: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.one,
   },
-  columnTop: {
-    fontSize: 11,
-    fontWeight: 600,
-    textAlign: 'center',
+  gridNameText: {
+    flexShrink: 1,
+    fontSize: 13,
   },
-  slot: {
-    borderRadius: 6,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
+  gridCells: {
+    flex: 1,
+    flexDirection: 'row',
   },
-  perfectSlot: {
-    borderTopWidth: 2,
-    borderColor: '#30A46C',
-  },
-  columnLabel: {
+  gridHeaderCell: {
+    flex: 1,
     alignItems: 'center',
   },
-  labelText: {
+  gridLabel: {
     fontSize: 11,
     lineHeight: 14,
     textAlign: 'center',
   },
-  monthLabels: {
-    height: 18,
-    marginTop: Spacing.one,
+  gridMonthLabels: {
+    height: 14,
   },
-  monthLabel: {
+  gridMonthLabel: {
     position: 'absolute',
-    width: 30,
-    marginLeft: -15,
+    width: 24,
+    marginLeft: -12,
+  },
+  gridCellWeek: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridCellMonth: {
+    flex: 1,
+    height: 16,
+    borderRadius: 2,
+  },
+  gridCheck: {
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  gridCount: {
+    width: 38,
+  },
+  gridCountText: {
+    fontSize: 12,
+    fontWeight: 700,
+    textAlign: 'right',
+  },
+  gridTotals: {
+    borderTopWidth: 1,
+    paddingTop: Spacing.two,
+  },
+  perfectDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: PERFECT,
   },
   labelToday: {
     fontWeight: 700,
-  },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.three,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    maxWidth: '100%',
-  },
-  legendSwatch: {
-    width: 10,
-    height: 10,
-    borderRadius: 3,
   },
   habit: {
     gap: Spacing.two,

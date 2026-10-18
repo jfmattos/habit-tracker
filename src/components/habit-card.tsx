@@ -22,7 +22,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { cycleDay, logOnce, undoOnce } from '@/lib/check-in';
 import { textOn } from '@/lib/colors';
 import { currentMonth, todayKey } from '@/lib/dates';
-import { goalProgress, periodLabel } from '@/lib/goals';
+import { goalLabel, goalProgress } from '@/lib/goals';
 import { challengeState, countOn } from '@/lib/habit-logic';
 import { currentStreak, doneDaysInMonth } from '@/lib/stats';
 import { startChallenge, type Habit, type LogResult } from '@/store/habits';
@@ -56,14 +56,9 @@ export function HabitCard({ habit }: { habit: Habit }) {
     celebrateIfDone(habit.kind === 'check' ? cycleDay(habit, today) : logOnce(habit, today));
   }
 
-  const label =
-    habit.kind === 'check'
-      ? done
-        ? 'Done today'
-        : 'Check in'
-      : done
-        ? `Done ${count}/${habit.target}`
-        : `+1   ${count}/${habit.target}`;
+  // Plain "once a day" needs no label; any other goal is shown under the name
+  const hasGoal = !(habit.goal.period === 'day' && habit.goal.target === 1);
+  const periodGoal = habit.goal.period !== 'day';
 
   return (
     <Pressable
@@ -79,12 +74,17 @@ export function HabitCard({ habit }: { habit: Habit }) {
               {habit.name}
             </ThemedText>
           </View>
+          {hasGoal && (
+            <ThemedText type="smallBold" numberOfLines={1} style={[styles.goal, { color: habit.color }]}>
+              🎯 {goalLabel(habit.goal)}
+              {periodGoal &&
+                ` · ${Math.min(goal.done, goal.target)}/${goal.target}${goal.met ? ' ✓' : ''}`}
+            </ThemedText>
+          )}
           <ThemedText type="small" themeColor="textSecondary">
-            {habit.goal.period !== 'day'
-              ? `🎯 ${Math.min(goal.done, goal.target)}/${goal.target} ${periodLabel(habit.goal.period)}${goal.met ? ' ✓' : ''}`
-              : streak > 1
-                ? `🔥 ${streak}-day streak`
-                : `${doneDaysInMonth(habit, currentMonth())} days this month`}
+            {streak > 1
+              ? `🔥 ${streak}-day streak`
+              : `${doneDaysInMonth(habit, currentMonth())} days this month`}
           </ThemedText>
 
           {challenge?.status === 'active' && (
@@ -109,58 +109,88 @@ export function HabitCard({ habit }: { habit: Habit }) {
             </Pressable>
           )}
 
-          <View style={styles.buttonRow}>
-          <View>
-            <Burst color={habit.color} trigger={burst} />
-            <Animated.View style={buttonStyle}>
-              <Pressable
-                onPress={checkIn}
-                onLongPress={habit.kind === 'count' && count > 0 ? () => undoOnce(habit, today) : undefined}
-                accessibilityLabel={label}
-                accessibilityHint={habit.kind === 'count' ? 'Long press to undo one check-in' : undefined}
-                style={({ pressed }) => [
-                  styles.todayButton,
-                  { backgroundColor: done ? habit.color : theme.backgroundSelected },
-                  pressed && styles.pressed,
-                ]}>
-                {habit.kind === 'count' && !done && (
-                  <View
-                    style={[
-                      styles.partial,
-                      { width: `${(count / habit.target) * 100}%`, backgroundColor: `${habit.color}59` },
-                    ]}
-                  />
-                )}
-                {(habit.kind === 'check' || done) && (
+          <View style={styles.actions}>
+            {habit.kind === 'count' ? (
+              // − count +: the count sits between the buttons, so it never reads as a label
+              <View style={styles.counter}>
+                <Pressable
+                  onPress={() => {
+                    if (!justSwiped()) undoOnce(habit, today);
+                  }}
+                  disabled={count === 0}
+                  accessibilityLabel="Remove one check-in"
+                  hitSlop={4}
+                  style={({ pressed }) => [
+                    styles.roundButton,
+                    { backgroundColor: theme.backgroundSelected },
+                    count === 0 && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}>
                   <SymbolView
-                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                    size={14}
-                    tintColor={done ? textOn(habit.color) : theme.textSecondary}
+                    name={{ ios: 'minus', android: 'remove', web: 'remove' }}
+                    size={16}
+                    tintColor={theme.text}
                   />
-                )}
-                <ThemedText type="smallBold" style={{ color: done ? textOn(habit.color) : theme.text }}>
-                  {label}
-                </ThemedText>
-              </Pressable>
-            </Animated.View>
-          </View>
-          {habit.kind === 'count' && count > 0 && (
-            <Pressable
-              onPress={() => undoOnce(habit, today)}
-              accessibilityLabel="Remove one check-in"
-              hitSlop={4}
-              style={({ pressed }) => [
-                styles.minusButton,
-                { backgroundColor: theme.backgroundSelected },
-                pressed && styles.pressed,
-              ]}>
-              <SymbolView
-                name={{ ios: 'minus', android: 'remove', web: 'remove' }}
-                size={14}
-                tintColor={theme.text}
-              />
-            </Pressable>
-          )}
+                </Pressable>
+                <View style={styles.counterValue}>
+                  <ThemedText style={[styles.counterNumber, { color: done ? habit.color : theme.text }]}>
+                    {count}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    /{habit.target}
+                  </ThemedText>
+                </View>
+                <View>
+                  <Burst color={habit.color} trigger={burst} />
+                  <Animated.View style={buttonStyle}>
+                    <Pressable
+                      onPress={checkIn}
+                      disabled={done}
+                      accessibilityLabel={done ? 'Done for today' : 'Add one check-in'}
+                      hitSlop={4}
+                      style={({ pressed }) => [
+                        styles.roundButton,
+                        styles.plusButton,
+                        { backgroundColor: habit.color },
+                        pressed && styles.pressed,
+                      ]}>
+                      <SymbolView
+                        name={
+                          done
+                            ? { ios: 'checkmark', android: 'check', web: 'check' }
+                            : { ios: 'plus', android: 'add', web: 'add' }
+                        }
+                        size={18}
+                        tintColor={textOn(habit.color)}
+                      />
+                    </Pressable>
+                  </Animated.View>
+                </View>
+              </View>
+            ) : (
+              <View>
+                <Burst color={habit.color} trigger={burst} />
+                <Animated.View style={buttonStyle}>
+                  <Pressable
+                    onPress={checkIn}
+                    accessibilityLabel={done ? 'Done today' : 'Check in'}
+                    style={({ pressed }) => [
+                      styles.todayButton,
+                      { backgroundColor: done ? habit.color : theme.backgroundSelected },
+                      pressed && styles.pressed,
+                    ]}>
+                    <SymbolView
+                      name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                      size={14}
+                      tintColor={done ? textOn(habit.color) : theme.textSecondary}
+                    />
+                    <ThemedText type="smallBold" style={{ color: done ? textOn(habit.color) : theme.text }}>
+                      {done ? 'Done today' : 'Check in'}
+                    </ThemedText>
+                  </Pressable>
+                </Animated.View>
+              </View>
+            )}
           </View>
         </View>
 
@@ -196,20 +226,42 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     maxWidth: 160,
   },
-  buttonRow: {
+  goal: {
+    fontSize: 13,
+  },
+  actions: {
     flexDirection: 'row',
-    alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: Spacing.two,
     marginTop: 'auto',
     paddingTop: Spacing.two,
   },
-  minusButton: {
+  counter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  counterValue: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    minWidth: 40,
+    justifyContent: 'center',
+  },
+  counterNumber: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: 700,
+  },
+  roundButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  plusButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   todayButton: {
     flexDirection: 'row',
@@ -218,13 +270,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.four,
-    overflow: 'hidden',
   },
-  partial: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
+  disabled: {
+    opacity: 0.35,
   },
   grid: {
     width: 133,

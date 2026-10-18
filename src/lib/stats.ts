@@ -72,8 +72,6 @@ export function habitPeriod(habit: Habit, days: number) {
     doneDays,
     rate: doneDays / days,
     checkIns: keys.reduce((sum, key) => sum + countOn(habit, key), 0),
-    /** Daily fraction of the target, oldest first */
-    bars: keys.map((key) => Math.min(1, countOn(habit, key) / habit.target)),
   };
 }
 
@@ -105,4 +103,9 @@ export function totalCheckIns(habits: Habit[]) {
     (sum, habit) => sum + Object.values(habit.log).reduce((total, count) => total + count, 0),
     0
   );
+}
+
+/** Days with at least one check-in on any habit */
+export function activeDays(habits: Habit[]) {
+  return new Set(habits.flatMap((habit) => Object.keys(habit.log))).size;
 }
