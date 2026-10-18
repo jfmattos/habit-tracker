@@ -1,4 +1,4 @@
-import { addDays, dateKey, parseKey, todayKey, type Month } from '@/lib/dates';
+import { addDays, dateKey, todayKey, weekStart, type Month } from '@/lib/dates';
 import { countOn, isDone } from '@/lib/habit-logic';
 import type { Habit } from '@/store/habits';
 
@@ -33,10 +33,10 @@ export function bestStreak(habit: Habit) {
   return best;
 }
 
-/** Done days per week (Sunday to Saturday) for the last `weeks` weeks, oldest first */
+/** Done days per week (Monday to Sunday) for the last `weeks` weeks, oldest first */
 export function weeklyDone(habit: Habit, weeks: number) {
   const today = todayKey();
-  const thisWeek = addDays(today, -parseKey(today).getDay());
+  const thisWeek = weekStart(today);
   return Array.from({ length: weeks }, (_, index) => {
     const start = addDays(thisWeek, -7 * (weeks - 1 - index));
     let done = 0;

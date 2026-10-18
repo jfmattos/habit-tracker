@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { addDays, dayLabel, parseKey, todayKey } from '@/lib/dates';
+import { addDays, dayLabel, daysBetween, parseKey, todayKey, weekStart } from '@/lib/dates';
 import { countOn, isDone } from '@/lib/habit-logic';
 import {
   bestStreak,
@@ -23,16 +23,23 @@ import {
 } from '@/lib/stats';
 import { useHabits, type Habit } from '@/store/habits';
 
-const LOG_DAYS = 14;
+/** Days added to the history each time "Show older days" is tapped */
+const HISTORY_PAGE = 14;
+const TABS = [
+  { value: 'overview', label: '📊 Overview' },
+  { value: 'history', label: '🗓️ History' },
+] as const;
 const PERIODS = [
   { value: 7, label: 'Last 7 days' },
   { value: 30, label: 'Last 30 days' },
 ];
 
+type Tab = (typeof TABS)[number]['value'];
+
 export default function ProgressScreen() {
   const theme = useTheme();
   const habits = useHabits();
-  const [period, setPeriod] = useState(7);
+  const [tab, setTab] = useState<Tab>('overview');
 
   if (habits.length === 0) {
     return (
@@ -42,20 +49,36 @@ export default function ProgressScreen() {
     );
   }
 
-  const totals = periodTotals(habits, period);
-  const trophies = habits.reduce((sum, habit) => sum + habit.wins.length, 0);
-  const logDays = Array.from({ length: LOG_DAYS }, (_, index) => addDays(todayKey(), -index));
-
   return (
     <ScrollView
       style={{ backgroundColor: theme.background }}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.content}>
+      <SegmentedControl options={[...TABS]} value={tab} onChange={setTab} />
+      {tab === 'overview' ? <Overview habits={habits} /> : <History habits={habits} />}
+    </ScrollView>
+  );
+}
+
+function Overview({ habits }: { habits: Habit[] }) {
+  const [period, setPeriod] = useState(7);
+  const totals = periodTotals(habits, period);
+  const perfect = perfectDays(habits);
+  const challengesWon = habits.reduce((sum, habit) => sum + habit.wins.length, 0);
+
+  return (
+    <>
       <View style={styles.tiles}>
-        <Tile emoji="🌟" label="Perfect days" value={perfectDays(habits)} color="#30A46C" />
+        <Tile emoji="🌟" label="Perfect days" value={perfect} color="#30A46C" />
         <Tile emoji="✅" label="Check-ins" value={totalCheckIns(habits)} color="#3E63DD" />
         <Tile emoji="🔥" label="Best streak" value={Math.max(...habits.map(bestStreak))} color="#F76B15" />
-        <Tile emoji="🏆" label="Trophies" value={trophies} color="#D99A00" />
+        <Tile
+          emoji="🏆"
+          label="Trophies"
+          value={challengesWon + perfect}
+          detail={`${challengesWon} ${challengesWon === 1 ? 'challenge' : 'challenges'} + ${perfect} perfect ${perfect === 1 ? 'day' : 'days'}`}
+          color="#D99A00"
+        />
       </View>
 
       <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} />
@@ -94,16 +117,76 @@ export default function ProgressScreen() {
           <HabitProgress key={habit.id} habit={habit} days={period} />
         ))}
       </ThemedView>
+    </>
+  );
+}
 
-      <ThemedView type="backgroundElement" style={styles.panel}>
-        <ThemedText type="smallBold" style={styles.panelTitle}>
-          🗓️ Log
+function weekTitle(start: string) {
+  const thisWeek = weekStart(todayKey());
+  if (start === thisWeek) return 'This week';
+  if (start === addDays(thisWeek, -7)) return 'Last week';
+  const short = (key: string) =>
+    parseKey(key).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${short(start)} – ${short(addDays(start, 6))}`;
+}
+
+/** Every logged day, newest first, grouped into Monday-to-Sunday weeks */
+function History({ habits }: { habits: Habit[] }) {
+  const [shown, setShown] = useState(HISTORY_PAGE);
+  const today = todayKey();
+  const first = habits.map(firstKey).sort()[0];
+  const total = Math.max(1, daysBetween(first, today) + 1);
+  const days = Array.from({ length: Math.min(shown, total) }, (_, index) => addDays(today, -index));
+
+  const weeks: { start: string; days: string[] }[] = [];
+  for (const day of days) {
+    const start = weekStart(day);
+    if (weeks[weeks.length - 1]?.start !== start) weeks.push({ start, days: [] });
+    weeks[weeks.length - 1].days.push(day);
+  }
+
+  return (
+    <>
+      {weeks.map((week) => {
+        const done = week.days.reduce(
+          (sum, day) => sum + habits.filter((habit) => isDone(habit, day)).length,
+          0
+        );
+        const possible = week.days.reduce(
+          (sum, day) => sum + habits.filter((habit) => firstKey(habit) <= day).length,
+          0
+        );
+        return (
+          <ThemedView key={week.start} type="backgroundElement" style={styles.panel}>
+            <View style={styles.panelHeader}>
+              <ThemedText type="smallBold" style={styles.panelTitle}>
+                {weekTitle(week.start)}
+              </ThemedText>
+              <ThemedText type="smallBold" themeColor="textSecondary">
+                {done}/{possible} done
+              </ThemedText>
+            </View>
+            {week.days.map((key) => (
+              <LogDay key={key} day={key} habits={habits} />
+            ))}
+          </ThemedView>
+        );
+      })}
+
+      {shown < total ? (
+        <Pressable
+          onPress={() => setShown(shown + HISTORY_PAGE)}
+          style={({ pressed }) => [styles.more, pressed && styles.pressed]}>
+          <ThemedText type="smallBold" style={styles.moreText}>
+            Show older days
+          </ThemedText>
+        </Pressable>
+      ) : (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.historyEnd}>
+          That&apos;s where your journey started 🌱
         </ThemedText>
-        {logDays.map((key) => (
-          <LogDay key={key} day={key} habits={habits} />
-        ))}
-      </ThemedView>
-    </ScrollView>
+      )}
+    </>
   );
 }
 
@@ -283,17 +366,34 @@ function LogDay({ day, habits }: { day: string; habits: Habit[] }) {
   );
 }
 
-function Tile({ emoji, label, value, color }: { emoji: string; label: string; value: number; color: string }) {
+function Tile({
+  emoji,
+  label,
+  value,
+  color,
+  detail,
+}: {
+  emoji: string;
+  label: string;
+  value: number;
+  color: string;
+  detail?: string;
+}) {
   return (
     <ThemedView type="backgroundElement" style={styles.tile}>
       <View style={[styles.tileIcon, { backgroundColor: `${color}2E` }]}>
         <Text style={styles.tileEmoji}>{emoji}</Text>
       </View>
-      <View>
+      <View style={styles.tileText}>
         <Text style={[styles.tileValue, { color }]}>{value}</Text>
         <ThemedText type="small" themeColor="textSecondary">
           {label}
         </ThemedText>
+        {detail && (
+          <ThemedText themeColor="textSecondary" style={styles.tileDetail}>
+            {detail}
+          </ThemedText>
+        )}
       </View>
     </ThemedView>
   );
@@ -337,6 +437,24 @@ const styles = StyleSheet.create({
   },
   tileEmoji: {
     fontSize: 22,
+  },
+  tileText: {
+    flexShrink: 1,
+  },
+  tileDetail: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  more: {
+    alignItems: 'center',
+    padding: Spacing.three,
+  },
+  moreText: {
+    color: '#3E63DD',
+  },
+  historyEnd: {
+    textAlign: 'center',
+    padding: Spacing.three,
   },
   tileValue: {
     fontSize: 26,

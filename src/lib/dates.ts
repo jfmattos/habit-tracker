@@ -1,6 +1,17 @@
 export type Month = { year: number; month: number };
 
-export const Weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+/** Weeks start on Monday throughout the app */
+export const Weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/** 0 for Monday through 6 for Sunday */
+export function weekdayIndex(date: Date) {
+  return (date.getDay() + 6) % 7;
+}
+
+/** The Monday of the week containing `key` */
+export function weekStart(key: string) {
+  return addDays(key, -weekdayIndex(parseKey(key)));
+}
 
 /** Local-time date key in the form YYYY-MM-DD */
 export function dateKey(date: Date) {
@@ -57,9 +68,9 @@ export function monthLabel({ year, month }: Month) {
   return new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
-/** Day numbers for a calendar grid starting on Sunday, with null for the leading blanks */
+/** Day numbers for a calendar grid starting on Monday, with null for the leading blanks */
 export function monthCells({ year, month }: Month) {
-  const leading = new Date(year, month, 1).getDay();
+  const leading = weekdayIndex(new Date(year, month, 1));
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = Array(leading).fill(null);
   for (let day = 1; day <= daysInMonth; day++) {
