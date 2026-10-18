@@ -1,8 +1,7 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { BarChart } from '@/components/bar-chart';
 import { ChallengeTrack } from '@/components/challenge-track';
 import { Stepper } from '@/components/habit-fields';
 import { IconButton } from '@/components/icon-button';
@@ -12,21 +11,28 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { cycleDay, logOnce, undoOnce } from '@/lib/check-in';
+import { textOn } from '@/lib/colors';
+import { confirmDeleteHabit } from '@/lib/confirm-delete';
 import {
   addMonths,
   currentMonth,
+  daysBetween,
   dayLabel,
   isSameMonth,
   monthLabel,
   parseKey,
   todayKey,
+  weekStart,
 } from '@/lib/dates';
 import { goalLabel, goalProgress, goalsMet, periodLabel } from '@/lib/goals';
 import { challengeState, countOn, nextChallengeLength } from '@/lib/habit-logic';
-import { bestStreak, currentStreak, doneDaysInMonth, weeklyDone } from '@/lib/stats';
-import { deleteHabit, startChallenge, useHabit, type Habit } from '@/store/habits';
+import { bestStreak, currentStreak, doneDaysInMonth, firstKey, weeklyDone } from '@/lib/stats';
+import { startChallenge, useHabit, type Habit } from '@/store/habits';
 
-const CHART_WEEKS = 12;
+/** The weekly chart shows the weeks since the habit started, within these bounds */
+const MIN_WEEKS = 4;
+const MAX_WEEKS = 8;
+const WEEK_CHART_HEIGHT = 120;
 
 export default function HabitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -51,26 +57,11 @@ function HabitDetail({ habit }: { habit: Habit }) {
   const [selectedDay, setSelectedDay] = useState(todayKey);
   const selectedCount = countOn(habit, selectedDay);
   const isCurrentMonth = isSameMonth(month, currentMonth());
-  const weeks = weeklyDone(habit, CHART_WEEKS);
 
   function confirmDelete() {
-    const remove = () => {
-      deleteHabit(habit.id);
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/');
-      }
-    };
-    const message = `Delete "${habit.name}" and all of its history?`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) remove();
-      return;
-    }
-    Alert.alert('Delete habit', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: remove },
-    ]);
+    confirmDeleteHabit(habit, {
+      onDeleted: () => (router.canGoBack() ? router.back() : router.replace('/')),
+    });
   }
 
   return (
@@ -154,21 +145,87 @@ function HabitDetail({ habit }: { habit: Habit }) {
         <Stat label="This month" value={doneDaysInMonth(habit, month)} color={habit.color} />
       </View>
 
-      <ThemedView type="backgroundElement" style={styles.panel}>
-        <ThemedText type="smallBold" style={styles.panelTitle}>
-          Days done per week
-        </ThemedText>
-        <BarChart
-          bars={weeks.map((week) => ({ value: week.done / 7 }))}
-          color={habit.color}
-          startLabel={parseKey(weeks[0].start).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-          })}
-          endLabel="This week"
-        />
-      </ThemedView>
+      <WeekChart habit={habit} />
     </ScrollView>
+  );
+}
+
+/** Done days in each Monday-to-Sunday week, with the count on each bar and the weekly goal line */
+function WeekChart({ habit }: { habit: Habit }) {
+  const theme = useTheme();
+  const today = todayKey();
+  const sinceStart = Math.floor(daysBetween(weekStart(firstKey(habit)), weekStart(today)) / 7) + 1;
+  const weeks = weeklyDone(habit, Math.max(MIN_WEEKS, Math.min(MAX_WEEKS, sinceStart)));
+  const weeklyGoal = habit.goal.period === 'week' ? habit.goal.target : null;
+  // Past weeks only, so the week in progress doesn't drag the average down
+  const finished = sinceStart > 1 ? weeks.slice(0, -1).slice(-(sinceStart - 1)) : [];
+  const average = finished.length
+    ? finished.reduce((sum, week) => sum + week.done, 0) / finished.length
+    : weeks[weeks.length - 1].done;
+  const summary = weeklyGoal
+    ? `Goal met in ${weeks.filter((week) => week.done >= weeklyGoal).length} of the last ${weeks.length} weeks`
+    : `Average ${average.toFixed(1)} days a week`;
+
+  return (
+    <ThemedView type="backgroundElement" style={styles.panel}>
+      <View>
+        <ThemedText type="smallBold" style={styles.panelTitle}>
+          📊 Days done per week
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {summary}
+        </ThemedText>
+      </View>
+
+      <View style={[styles.weekBars, { height: WEEK_CHART_HEIGHT + 18 }]}>
+        {weeklyGoal && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.goalLine,
+              { bottom: (weeklyGoal / 7) * WEEK_CHART_HEIGHT, borderColor: theme.textSecondary },
+            ]}>
+            <ThemedText themeColor="textSecondary" style={styles.goalLineLabel}>
+              Goal {weeklyGoal}
+            </ThemedText>
+          </View>
+        )}
+        {weeks.map((week) => {
+          const current = week.start === weekStart(today);
+          const reached = weeklyGoal !== null && week.done >= weeklyGoal;
+          return (
+            <View key={week.start} style={styles.weekColumn}>
+              <ThemedText
+                type="smallBold"
+                style={[styles.weekCount, { color: week.done > 0 ? habit.color : theme.textSecondary }]}>
+                {reached ? `✓${week.done}` : week.done}
+              </ThemedText>
+              <View style={[styles.weekSlot, { height: WEEK_CHART_HEIGHT, backgroundColor: theme.backgroundSelected }]}>
+                <View
+                  style={{
+                    height: `${(week.done / 7) * 100}%`,
+                    backgroundColor: current && !reached ? `${habit.color}B3` : habit.color,
+                  }}
+                />
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.weekLabels}>
+        {weeks.map((week) => (
+          <ThemedText
+            key={week.start}
+            themeColor={week.start === weekStart(today) ? 'text' : 'textSecondary'}
+            style={styles.weekLabel}>
+            {week.start === weekStart(today)
+              ? 'This\nweek'
+              : parseKey(week.start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }).replace(' ', '\n')}
+          </ThemedText>
+        ))}
+      </View>
+    </ThemedView>
   );
 }
 
@@ -248,7 +305,7 @@ function ChallengePanel({ habit }: { habit: Habit }) {
               { backgroundColor: habit.color },
               pressed && styles.pressed,
             ]}>
-            <ThemedText type="smallBold" style={styles.challengeButtonText}>
+            <ThemedText type="smallBold" style={{ color: textOn(habit.color) }}>
               {challenge?.status === 'failed'
                 ? `Restart ${challenge.length}-day challenge`
                 : `Start ${next}-day challenge`}
@@ -341,9 +398,54 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     fontWeight: 700,
   },
-  headerActions: {
+  weekBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: Spacing.two,
+  },
+  weekColumn: {
+    flex: 1,
+    gap: Spacing.one,
+  },
+  weekCount: {
+    fontSize: 13,
+    lineHeight: 14,
+    textAlign: 'center',
+  },
+  weekSlot: {
+    borderRadius: 6,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  goalLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    zIndex: 1,
+  },
+  goalLineLabel: {
+    position: 'absolute',
+    right: 0,
+    top: -16,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  weekLabels: {
     flexDirection: 'row',
     gap: Spacing.two,
+    marginTop: -Spacing.two,
+  },
+  weekLabel: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: Spacing.four,
   },
   goalTrack: {
     flexDirection: 'row',

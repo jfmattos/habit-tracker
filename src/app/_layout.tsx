@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { CelebrationOverlay } from '@/components/celebration-overlay';
@@ -31,22 +32,31 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="habit/[id]" options={{ headerBackTitle: 'Today' }} />
-        <Stack.Screen name="progress" options={{ title: 'Progress', headerBackTitle: 'Today' }} />
-        <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Today' }} />
-        <Stack.Screen
-          name="habit-form"
-          // A standard modal, not a formSheet: the form scrolls, and scrolling content
-          // inside a full-height formSheet didn't work on iOS
-          options={{ presentation: 'modal', headerShown: false }}
-        />
-      </Stack>
-      <CelebrationOverlay />
-    </ThemeProvider>
+    // Needed by react-native-gesture-handler (swipe to delete on the Today screen)
+    <GestureHandlerRootView style={styles.root}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <AnimatedSplashOverlay />
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
+          <Stack.Screen name="habit/[id]" options={{ headerBackTitle: 'Today' }} />
+          <Stack.Screen name="progress" options={{ title: 'Progress', headerBackTitle: 'Today' }} />
+          <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Today' }} />
+          <Stack.Screen
+            name="habit-form"
+            // A standard modal, not a formSheet: the form scrolls, and scrolling content
+            // inside a full-height formSheet didn't work on iOS
+            options={{ presentation: 'modal', headerShown: false }}
+          />
+        </Stack>
+        <CelebrationOverlay />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+});

@@ -14,11 +14,13 @@ import { Burst } from '@/components/burst';
 import { ChallengeTrack } from '@/components/challenge-track';
 import { HabitBadge } from '@/components/habit-badge';
 import { MonthGrid } from '@/components/month-grid';
+import { useSwipeGuard } from '@/components/swipe-to-delete';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { cycleDay, logOnce, undoOnce } from '@/lib/check-in';
+import { textOn } from '@/lib/colors';
 import { currentMonth, todayKey } from '@/lib/dates';
 import { goalProgress, periodLabel } from '@/lib/goals';
 import { challengeState, countOn } from '@/lib/habit-logic';
@@ -27,6 +29,7 @@ import { startChallenge, type Habit, type LogResult } from '@/store/habits';
 
 export function HabitCard({ habit }: { habit: Habit }) {
   const theme = useTheme();
+  const justSwiped = useSwipeGuard();
   const [burst, setBurst] = useState(0);
   const scale = useSharedValue(1);
   const buttonStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
@@ -48,6 +51,7 @@ export function HabitCard({ habit }: { habit: Habit }) {
   }
 
   function checkIn() {
+    if (justSwiped()) return;
     // Once-a-day habits toggle; multi-check-in habits count up to their target
     celebrateIfDone(habit.kind === 'check' ? cycleDay(habit, today) : logOnce(habit, today));
   }
@@ -63,7 +67,9 @@ export function HabitCard({ habit }: { habit: Habit }) {
 
   return (
     <Pressable
-      onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
+      onPress={() => {
+        if (!justSwiped()) router.push({ pathname: '/habit/[id]', params: { id: habit.id } });
+      }}
       style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView type="backgroundElement" style={styles.card}>
         <View style={styles.info}>
@@ -129,10 +135,10 @@ export function HabitCard({ habit }: { habit: Habit }) {
                   <SymbolView
                     name={{ ios: 'checkmark', android: 'check', web: 'check' }}
                     size={14}
-                    tintColor={done ? '#ffffff' : theme.textSecondary}
+                    tintColor={done ? textOn(habit.color) : theme.textSecondary}
                   />
                 )}
-                <ThemedText type="smallBold" style={{ color: done ? '#ffffff' : theme.text }}>
+                <ThemedText type="smallBold" style={{ color: done ? textOn(habit.color) : theme.text }}>
                   {label}
                 </ThemedText>
               </Pressable>

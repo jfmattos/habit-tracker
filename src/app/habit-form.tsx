@@ -9,6 +9,7 @@ import { HabitColors } from '@/constants/habit-colors';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { celebrateChallenge } from '@/lib/check-in';
+import { textOn } from '@/lib/colors';
 import { ChallengeTiers, challengeState } from '@/lib/habit-logic';
 import { addHabit, getHabits, updateHabit, useHabit, type Goal } from '@/store/habits';
 
@@ -103,7 +104,7 @@ export default function HabitFormScreen() {
             !canSave && styles.disabled,
             pressed && styles.pressed,
           ]}>
-          <ThemedText type="smallBold" style={styles.saveText}>
+          <ThemedText type="smallBold" style={[styles.saveText, { color: textOn(color) }]}>
             {habit ? 'Save changes' : 'Add habit'}
           </ThemedText>
         </Pressable>

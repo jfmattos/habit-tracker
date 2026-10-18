@@ -2,41 +2,37 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRef, useState } from 'react';
 import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
-import { colorToHue, hueToColor } from '@/lib/colors';
 import { feedback } from '@/lib/feedback';
 
-const STOPS = Array.from({ length: 13 }, (_, index) => hueToColor(index * 30)) as [
-  string,
-  string,
-  ...string[],
-];
 const THUMB = 28;
-/** Haptic tick every this many degrees while dragging */
-const TICK_DEGREES = 20;
+/** Haptic ticks per full drag across the bar */
+const TICKS = 18;
 
-type HueSliderProps = {
-  /** The selected color, or null to hide the thumb (e.g. when a preset is selected) */
-  value: string | null;
-  onChange: (color: string) => void;
+type GradientSliderProps = {
+  /** At least two gradient colors, left to right */
+  stops: readonly [string, string, ...string[]];
+  /** Thumb position from 0 to 1, or null to hide the thumb */
+  position: number | null;
+  thumbColor: string;
+  label: string;
+  onChange: (position: number) => void;
 };
 
-/** A drag-to-pick rainbow bar for custom habit colors */
-export function HueSlider({ value, onChange }: HueSliderProps) {
+/** A drag-to-pick gradient bar; reports the touch position from 0 (left) to 1 (right) */
+export function GradientSlider({ stops, position, thumbColor, label, onChange }: GradientSliderProps) {
   const [width, setWidth] = useState(0);
   const lastTick = useRef<number | null>(null);
 
   function pick(event: GestureResponderEvent) {
     if (width === 0) return;
-    const hue = Math.max(0, Math.min(1, event.nativeEvent.locationX / width)) * 359;
-    const tick = Math.round(hue / TICK_DEGREES);
+    const value = Math.max(0, Math.min(1, event.nativeEvent.locationX / width));
+    const tick = Math.round(value * TICKS);
     if (tick !== lastTick.current) {
       lastTick.current = tick;
       feedback.select();
     }
-    onChange(hueToColor(hue));
+    onChange(value);
   }
-
-  const position = value === null ? null : (colorToHue(value) / 359) * width;
 
   return (
     <View
@@ -51,19 +47,19 @@ export function HueSlider({ value, onChange }: HueSliderProps) {
         lastTick.current = null;
       }}
       accessibilityRole="adjustable"
-      accessibilityLabel="Custom color"
+      accessibilityLabel={label}
       style={styles.container}>
       <LinearGradient
-        colors={STOPS}
+        colors={stops}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         pointerEvents="none"
         style={styles.bar}
       />
-      {position !== null && value && (
+      {position !== null && (
         <View
           pointerEvents="none"
-          style={[styles.thumb, { left: position - THUMB / 2, backgroundColor: value }]}
+          style={[styles.thumb, { left: position * width - THUMB / 2, backgroundColor: thumbColor }]}
         />
       )}
     </View>

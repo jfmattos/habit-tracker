@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { HabitColors } from '@/constants/habit-colors';
 import { Spacing } from '@/constants/theme';
+import { textOn } from '@/lib/colors';
 import { nextChallengeLength } from '@/lib/habit-logic';
 import { dismissCelebration, useCelebration, type Celebration } from '@/store/celebration';
 import { startChallenge, useHabit } from '@/store/habits';
@@ -87,7 +88,7 @@ function ChallengeWon({ celebration }: { celebration: Extract<Celebration, { kin
             { backgroundColor: celebration.color },
             pressed && styles.pressed,
           ]}>
-          <ThemedText type="smallBold" style={styles.primaryText}>
+          <ThemedText type="smallBold" style={[styles.primaryText, { color: textOn(celebration.color) }]}>
             Start {next}-day challenge
           </ThemedText>
         </Pressable>
@@ -120,7 +121,7 @@ function GoalMet({ celebration }: { celebration: Extract<Celebration, { kind: 'g
           { backgroundColor: celebration.color },
           pressed && styles.pressed,
         ]}>
-        <ThemedText type="smallBold" style={styles.primaryText}>
+        <ThemedText type="smallBold" style={[styles.primaryText, { color: textOn(celebration.color) }]}>
           Awesome
         </ThemedText>
       </Pressable>

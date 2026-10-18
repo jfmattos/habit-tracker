@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
+import { textOn } from '@/lib/colors';
 import { monthCells, monthDateKey, todayKey, Weekdays, type Month } from '@/lib/dates';
 import { countOn } from '@/lib/habit-logic';
 import type { Habit } from '@/store/habits';
@@ -63,7 +64,7 @@ export function MonthGrid({ habit, month, size = 'compact', onDayPress, selected
                   pressed && styles.pressed,
                 ]}>
                 {full && (
-                  <Text style={[styles.dayNumber, { color: done ? '#ffffff' : theme.text }]}>
+                  <Text style={[styles.dayNumber, { color: done ? textOn(habit.color) : theme.text }]}>
                     {day}
                   </Text>
                 )}

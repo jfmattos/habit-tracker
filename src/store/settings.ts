@@ -9,7 +9,11 @@ export type Settings = {
   eveningHour: number;
   sound: boolean;
   haptics: boolean;
+  /** Emojis typed from the keyboard, most recent first, offered first in the emoji picker */
+  customEmojis: string[];
 };
+
+const MAX_CUSTOM_EMOJIS = 12;
 
 const DEFAULTS: Settings = {
   onboarded: false,
@@ -18,6 +22,7 @@ const DEFAULTS: Settings = {
   eveningHour: 20,
   sound: true,
   haptics: true,
+  customEmojis: [],
 };
 
 const store = createPersistentStore<Settings>('settings', DEFAULTS, (raw) => ({
@@ -34,4 +39,11 @@ export function useSettings() {
 
 export function updateSettings(patch: Partial<Settings>) {
   store.set({ ...store.get(), ...patch });
+}
+
+export function rememberEmoji(emoji: string) {
+  const { customEmojis } = store.get();
+  updateSettings({
+    customEmojis: [emoji, ...customEmojis.filter((item) => item !== emoji)].slice(0, MAX_CUSTOM_EMOJIS),
+  });
 }

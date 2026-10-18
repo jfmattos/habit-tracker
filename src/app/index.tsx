@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitCard } from '@/components/habit-card';
 import { IconButton } from '@/components/icon-button';
+import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -90,7 +91,11 @@ export default function TodayScreen() {
               </ThemedText>
             </ThemedView>
           ) : (
-            habits.map((habit) => <HabitCard key={habit.id} habit={habit} />)
+            habits.map((habit) => (
+              <SwipeToDelete key={habit.id} habit={habit}>
+                <HabitCard habit={habit} />
+              </SwipeToDelete>
+            ))
           )}
         </ScrollView>
       </SafeAreaView>

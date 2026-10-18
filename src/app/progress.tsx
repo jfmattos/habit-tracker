@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { textOn } from '@/lib/colors';
 import { addDays, dayLabel, daysBetween, parseKey, todayKey, weekStart } from '@/lib/dates';
 import { goalLabel, goalsMet } from '@/lib/goals';
 import { countOn, isDone } from '@/lib/habit-logic';
@@ -364,7 +365,7 @@ function LogDay({ day, habits }: { day: string; habits: Habit[] }) {
               <ThemedText
                 type="small"
                 numberOfLines={1}
-                style={{ color: done ? '#ffffff' : count > 0 ? theme.text : theme.textSecondary }}>
+                style={{ color: done ? textOn(habit.color) : count > 0 ? theme.text : theme.textSecondary }}>
                 {habit.emoji ? `${habit.emoji} ` : done ? '✓ ' : ''}
                 {habit.name}
                 {habit.kind === 'count' && !done ? ` ${count}/${habit.target}` : ''}

@@ -2,19 +2,30 @@ import { SymbolView } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
-import { HueSlider } from '@/components/hue-slider';
+import { GradientSlider } from '@/components/gradient-slider';
 import { SegmentedControl } from '@/components/segmented-control';
 import { ThemedText } from '@/components/themed-text';
 import { HabitColors } from '@/constants/habit-colors';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { colorToHue, colorToShade, hueToColor, textOn } from '@/lib/colors';
 import { feedback } from '@/lib/feedback';
 import { ChallengeLengths } from '@/lib/habit-logic';
 import type { Goal } from '@/store/habits';
+import { rememberEmoji, useSettings } from '@/store/settings';
 
-/** The preset colors, plus a rainbow bar for any other color */
+const HUE_STOPS = Array.from({ length: 13 }, (_, index) => index * 30);
+const SHADE_STOPS = [0, 0.25, 0.5, 0.75, 1];
+
+function stops<T>(values: T[], toColor: (value: T) => string) {
+  return values.map(toColor) as [string, string, ...string[]];
+}
+
+/** The preset colors, plus hue and shade bars for any other color */
 export function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
-  const isPreset = (HabitColors as readonly string[]).includes(value);
+  const theme = useTheme();
+  const hue = colorToHue(value);
+  const shade = colorToShade(value);
 
   return (
     <View style={styles.colorPicker}>
@@ -28,20 +39,33 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
             }}
             accessibilityLabel={`Color ${option}`}
             accessibilityState={{ selected: option === value }}
-            style={[styles.swatchRing, option === value && { borderColor: option }]}>
+            style={[styles.swatchRing, option === value && { borderColor: theme.text }]}>
             <View style={[styles.swatch, { backgroundColor: option }]}>
               {option === value && (
                 <SymbolView
                   name={{ ios: 'checkmark', android: 'check', web: 'check' }}
                   size={16}
-                  tintColor="#ffffff"
+                  tintColor={textOn(option)}
                 />
               )}
             </View>
           </Pressable>
         ))}
       </View>
-      <HueSlider value={isPreset ? null : value} onChange={onChange} />
+      <GradientSlider
+        label="Color"
+        stops={stops(HUE_STOPS, (stop) => hueToColor(stop, shade))}
+        position={hue / 360}
+        thumbColor={value}
+        onChange={(position) => onChange(hueToColor(position * 359, shade))}
+      />
+      <GradientSlider
+        label="Shade"
+        stops={stops(SHADE_STOPS, (stop) => hueToColor(hue, stop))}
+        position={shade}
+        thumbColor={value}
+        onChange={(position) => onChange(hueToColor(hue, position))}
+      />
     </View>
   );
 }
@@ -53,7 +77,29 @@ const EMOJIS = [
   '🙏', '❤️', '☀️', '🌙',
 ];
 
-/** A scrollable row of common emojis; the dashed "+" at the end takes any other typed emoji */
+/**
+ * The last emoji in `text`, keeping multi-part emoji whole (skin tones, flags, 👩‍💻 sequences),
+ * or null when it has none, e.g. when letters were typed.
+ */
+function lastEmoji(text: string) {
+  try {
+    // Built at runtime so an engine without \p{} support throws here instead of at load time
+    const emoji = new RegExp(
+      '\\p{Regional_Indicator}{2}|\\p{Extended_Pictographic}(?:\\uFE0F|\\p{Emoji_Modifier})?(?:\\u200D\\p{Extended_Pictographic}(?:\\uFE0F|\\p{Emoji_Modifier})?)*',
+      'gu'
+    );
+    const matches = text.match(emoji);
+    return matches?.[matches.length - 1] ?? null;
+  } catch {
+    // Engines without Unicode property escapes: fall back to the last code point
+    return Array.from(text.trim()).slice(-1)[0] ?? null;
+  }
+}
+
+/**
+ * A scrollable row of emojis, starting with the ones you typed before, plus a field to add any
+ * emoji from the keyboard. Typed emojis are remembered for next time.
+ */
 export function EmojiPicker({
   value,
   color,
@@ -64,42 +110,51 @@ export function EmojiPicker({
   onChange: (emoji: string) => void;
 }) {
   const theme = useTheme();
-  // A typed emoji that isn't in the list is shown first, so the current choice is always visible
-  const custom = value && !EMOJIS.includes(value) ? value : '';
-  const options = custom ? [custom, ...EMOJIS] : EMOJIS;
+  const { customEmojis } = useSettings();
+  // The current emoji always shows, even if it was typed on another device or before saving
+  const options = [...new Set([value, ...customEmojis, ...EMOJIS].filter(Boolean))];
+
+  function addTyped(text: string) {
+    const emoji = lastEmoji(text);
+    if (!emoji) return;
+    feedback.select();
+    rememberEmoji(emoji);
+    onChange(emoji);
+  }
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojis}>
-      {options.map((emoji) => (
-        <Pressable
-          key={emoji}
-          onPress={() => {
-            feedback.select();
-            onChange(emoji);
-          }}
-          accessibilityLabel={`Emoji ${emoji}`}
-          accessibilityState={{ selected: emoji === value }}
-          style={[
-            styles.emoji,
-            { backgroundColor: emoji === value ? `${color}33` : theme.backgroundElement },
-            emoji === value && { borderColor: color },
-          ]}>
-          <Text style={styles.emojiText}>{emoji}</Text>
-        </Pressable>
-      ))}
-      <TextInput
-        value=""
-        onChangeText={(text) => {
-          // Keep only the last character typed (emoji can be several code units long)
-          const last = Array.from(text.trim()).slice(-1)[0];
-          if (last) onChange(last);
-        }}
-        placeholder="+"
-        placeholderTextColor={theme.textSecondary}
-        accessibilityLabel="Type your own emoji"
-        style={[styles.emoji, styles.emojiInput, { borderColor: theme.textSecondary, color: theme.text }]}
-      />
-    </ScrollView>
+    <View style={styles.emojiPicker}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojis}>
+        {options.map((emoji) => (
+          <Pressable
+            key={emoji}
+            onPress={() => {
+              feedback.select();
+              onChange(emoji);
+            }}
+            accessibilityLabel={`Emoji ${emoji}`}
+            accessibilityState={{ selected: emoji === value }}
+            style={[
+              styles.emoji,
+              { backgroundColor: emoji === value ? `${color}33` : theme.backgroundElement },
+              emoji === value && { borderColor: color },
+            ]}>
+            <Text style={styles.emojiText}>{emoji}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View style={[styles.emojiField, { backgroundColor: theme.backgroundElement }]}>
+        <Text style={styles.emojiText}>⌨️</Text>
+        <TextInput
+          value=""
+          onChangeText={addTyped}
+          placeholder="Add from keyboard: tap, then 😀 or 🌐"
+          placeholderTextColor={theme.textSecondary}
+          accessibilityLabel="Add an emoji from the keyboard"
+          style={[styles.emojiFieldInput, { color: theme.text }]}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -247,7 +302,7 @@ export function ChallengePicker({
                 styles.length,
                 { backgroundColor: length === value ? color : theme.backgroundElement },
               ]}>
-              <ThemedText type="smallBold" style={{ color: length === value ? '#ffffff' : theme.text }}>
+              <ThemedText type="smallBold" style={{ color: length === value ? textOn(color) : theme.text }}>
                 {length} days
               </ThemedText>
             </Pressable>
@@ -293,11 +348,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emojiInput: {
-    fontSize: 22,
-    textAlign: 'center',
-    padding: 0,
-    borderStyle: 'dashed',
+  emojiPicker: {
+    gap: Spacing.two,
+  },
+  emojiField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
+  },
+  emojiFieldInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: Spacing.three,
   },
   goal: {
     gap: Spacing.three,

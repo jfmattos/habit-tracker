@@ -16,6 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { HabitColors } from '@/constants/habit-colors';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { textOn } from '@/lib/colors';
 import { feedback } from '@/lib/feedback';
 import { ChallengeTiers } from '@/lib/habit-logic';
 import { remindersSupported, requestReminderPermission } from '@/lib/reminders';
@@ -124,7 +125,7 @@ export default function OnboardingScreen() {
                         ]}>
                         <ThemedText
                           type="smallBold"
-                          style={{ color: selected ? '#ffffff' : theme.text }}>
+                          style={{ color: selected ? textOn(suggestion.color) : theme.text }}>
                           {suggestion.emoji} {suggestion.name}
                           {suggestion.goal.target > 1 ? ` · ${suggestion.goal.target}×` : ''}
                         </ThemedText>
@@ -232,7 +233,7 @@ function PrimaryButton({
 }) {
   const theme = useTheme();
   // Before a habit is picked the accent is the text color, so the label flips to the background
-  const textColor = color === theme.text ? theme.background : '#ffffff';
+  const textColor = color === theme.text ? theme.background : textOn(color);
 
   return (
     <Pressable
