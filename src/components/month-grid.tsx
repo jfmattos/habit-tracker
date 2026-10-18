@@ -3,16 +3,19 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 import { monthCells, monthDateKey, todayKey, Weekdays, type Month } from '@/lib/dates';
+import { countOn } from '@/lib/habit-logic';
 import type { Habit } from '@/store/habits';
 
 type MonthGridProps = {
   habit: Habit;
   month: Month;
   size?: 'compact' | 'full';
-  onToggleDay?: (key: string) => void;
+  onDayPress?: (key: string) => void;
+  /** Day drawn with a highlight ring */
+  selectedKey?: string;
 };
 
-export function MonthGrid({ habit, month, size = 'compact', onToggleDay }: MonthGridProps) {
+export function MonthGrid({ habit, month, size = 'compact', onDayPress, selectedKey }: MonthGridProps) {
   const theme = useTheme();
   const today = todayKey();
   const full = size === 'full';
@@ -39,19 +42,23 @@ export function MonthGrid({ habit, month, size = 'compact', onToggleDay }: Month
           }
 
           const key = monthDateKey(month, day);
-          const done = !!habit.days[key];
+          const count = countOn(habit, key);
+          const done = count >= habit.target;
+          // Partly done count habits get a tint of the habit color
+          const background = done ? habit.color : count > 0 ? `${habit.color}59` : theme.backgroundSelected;
           const isFuture = key > today;
 
           return (
             <View key={key} style={cellStyle}>
               <Pressable
-                disabled={!onToggleDay || isFuture}
-                onPress={() => onToggleDay?.(key)}
-                accessibilityLabel={`${key}, ${done ? 'done' : 'not done'}`}
+                disabled={!onDayPress || isFuture}
+                onPress={() => onDayPress?.(key)}
+                accessibilityLabel={`${key}, ${count} of ${habit.target}`}
                 style={({ pressed }) => [
                   full ? styles.dayFull : styles.dayCompact,
-                  { backgroundColor: done ? habit.color : theme.backgroundSelected },
+                  { backgroundColor: background },
                   key === today && !done && { borderColor: habit.color, borderWidth: full ? 2 : 1.5 },
+                  key === selectedKey && { borderColor: theme.text, borderWidth: 2 },
                   isFuture && styles.future,
                   pressed && styles.pressed,
                 ]}>

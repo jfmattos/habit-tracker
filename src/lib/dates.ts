@@ -13,6 +13,32 @@ export function todayKey() {
   return dateKey(new Date());
 }
 
+export function parseKey(key: string) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+export function addDays(key: string, amount: number) {
+  const date = parseKey(key);
+  date.setDate(date.getDate() + amount);
+  return dateKey(date);
+}
+
+export function daysBetween(from: string, to: string) {
+  return Math.round((parseKey(to).getTime() - parseKey(from).getTime()) / 86_400_000);
+}
+
+export function dayLabel(key: string) {
+  const today = todayKey();
+  if (key === today) return 'Today';
+  if (key === addDays(today, -1)) return 'Yesterday';
+  return parseKey(key).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export function currentMonth(): Month {
   const now = new Date();
   return { year: now.getFullYear(), month: now.getMonth() };

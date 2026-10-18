@@ -1,102 +1,156 @@
-import './install-storage';
+import { todayKey } from '@/lib/dates';
+import { challengeState } from '@/lib/habit-logic';
 
-import { useSyncExternalStore } from 'react';
+import { createPersistentStore } from './create-store';
 
-import { dateKey, type Month } from '@/lib/dates';
+/** 'check' habits are done once a day; 'count' habits need `target` check-ins a day */
+export type HabitKind = 'check' | 'count';
+
+export type Challenge = { length: number; startKey: string };
 
 export type Habit = {
   id: string;
   name: string;
+  /** May be empty for habits created before emojis existed */
+  emoji: string;
   color: string;
-  /** Completed days, keyed by YYYY-MM-DD */
-  days: Record<string, true>;
+  kind: HabitKind;
+  target: number;
+  /** Check-ins per day, keyed by YYYY-MM-DD */
+  log: Record<string, number>;
+  challenge: Challenge | null;
+  /** Lengths of the challenges won, in order */
+  wins: number[];
   createdAt: string;
 };
 
-const STORAGE_KEY = 'habits';
-const EMPTY: Habit[] = [];
+type StoredHabit = Partial<Habit> & Pick<Habit, 'id' | 'name' | 'color' | 'createdAt'> & {
+  /** v1 format: completed days only */
+  days?: Record<string, true>;
+};
 
-let habits = load();
-const listeners = new Set<() => void>();
-
-function load(): Habit[] {
-  try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : EMPTY;
-  } catch {
-    return EMPTY;
-  }
+function migrate(raw: unknown): Habit[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as StoredHabit[]).map((habit) => ({
+    id: habit.id,
+    name: habit.name,
+    emoji: habit.emoji ?? '',
+    color: habit.color,
+    kind: habit.kind ?? 'check',
+    target: habit.target ?? 1,
+    log: habit.log ?? Object.fromEntries(Object.keys(habit.days ?? {}).map((key) => [key, 1])),
+    challenge: habit.challenge ?? null,
+    wins: habit.wins ?? [],
+    createdAt: habit.createdAt,
+  }));
 }
 
-function commit(next: Habit[]) {
-  habits = next;
-  globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(next));
-  listeners.forEach((listener) => listener());
-}
+const store = createPersistentStore<Habit[]>('habits', [], migrate);
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+export const getHabits = store.get;
+export const subscribeHabits = store.subscribe;
 
 export function useHabits() {
-  // Server snapshot is empty so static web rendering matches the first client render
-  return useSyncExternalStore(
-    subscribe,
-    () => habits,
-    () => EMPTY
-  );
+  return store.useValue();
 }
 
 export function useHabit(id: string) {
   return useHabits().find((habit) => habit.id === id);
 }
 
-export function addHabit(name: string, color: string) {
+function update(id: string, change: (habit: Habit) => Habit) {
+  store.set(store.get().map((habit) => (habit.id === id ? change(habit) : habit)));
+}
+
+/** Moves a just-completed challenge into `wins`; returns the length won, if any */
+function settle(habit: Habit): { habit: Habit; won: number | null } {
+  if (!habit.challenge || challengeState(habit)?.status !== 'completed') {
+    return { habit, won: null };
+  }
+  const won = habit.challenge.length;
+  return { habit: { ...habit, challenge: null, wins: [...habit.wins, won] }, won };
+}
+
+export type HabitInput = Pick<Habit, 'name' | 'emoji' | 'color' | 'kind' | 'target'> & {
+  /** null for no challenge */
+  challengeLength: number | null;
+};
+
+export function addHabit({ challengeLength, ...input }: HabitInput) {
   const habit: Habit = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    name,
-    color,
-    days: {},
+    ...input,
+    target: input.kind === 'check' ? 1 : input.target,
+    log: {},
+    challenge: challengeLength ? { length: challengeLength, startKey: todayKey() } : null,
+    wins: [],
     createdAt: new Date().toISOString(),
   };
-  commit([...habits, habit]);
+  store.set([...store.get(), habit]);
+  return habit.id;
+}
+
+/** Returns the length of a challenge the edit completed (e.g. by shortening it), if any */
+export function updateHabit(id: string, { challengeLength, ...input }: HabitInput) {
+  const habit = store.get().find((item) => item.id === id);
+  if (!habit) return null;
+
+  // Changing the length of a running challenge keeps its progress; otherwise it starts today
+  const running = challengeState(habit)?.status === 'active' ? habit.challenge : null;
+  const challenge = challengeLength
+    ? { length: challengeLength, startKey: running?.startKey ?? todayKey() }
+    : null;
+
+  const result = settle({
+    ...habit,
+    ...input,
+    target: input.kind === 'check' ? 1 : input.target,
+    challenge,
+  });
+  update(id, () => result.habit);
+  return result.won;
 }
 
 export function deleteHabit(id: string) {
-  commit(habits.filter((habit) => habit.id !== id));
+  store.set(store.get().filter((habit) => habit.id !== id));
 }
 
-export function toggleDay(id: string, key: string) {
-  commit(
-    habits.map((habit) => {
-      if (habit.id !== id) return habit;
-      const days = { ...habit.days };
-      if (days[key]) {
-        delete days[key];
-      } else {
-        days[key] = true;
-      }
-      return { ...habit, days };
-    })
-  );
+export function startChallenge(id: string, length: number) {
+  update(id, (habit) => ({ ...habit, challenge: { length, startKey: todayKey() } }));
 }
 
-export function countInMonth(habit: Habit, { year, month }: Month) {
-  const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
-  return Object.keys(habit.days).filter((key) => key.startsWith(prefix)).length;
-}
+export type LogResult = {
+  progressed: boolean;
+  undone: boolean;
+  goalReached: boolean;
+  /** Length of the challenge this check-in completed, if any */
+  wonChallenge: number | null;
+};
 
-/** Consecutive days up to today; a streak is still alive if today isn't checked yet */
-export function currentStreak(habit: Habit) {
-  const date = new Date();
-  if (!habit.days[dateKey(date)]) {
-    date.setDate(date.getDate() - 1);
+const UNCHANGED: LogResult = { progressed: false, undone: false, goalReached: false, wonChallenge: null };
+
+export function setCount(id: string, key: string, count: number): LogResult {
+  const habit = store.get().find((item) => item.id === id);
+  if (!habit) return UNCHANGED;
+
+  const before = habit.log[key] ?? 0;
+  const after = Math.max(0, Math.min(habit.target, count));
+  if (after === before) return UNCHANGED;
+
+  const log = { ...habit.log };
+  if (after === 0) {
+    delete log[key];
+  } else {
+    log[key] = after;
   }
-  let streak = 0;
-  while (habit.days[dateKey(date)]) {
-    streak++;
-    date.setDate(date.getDate() - 1);
-  }
-  return streak;
+
+  const result = settle({ ...habit, log });
+  update(id, () => result.habit);
+
+  return {
+    progressed: after > before,
+    undone: after < before,
+    goalReached: before < habit.target && after >= habit.target,
+    wonChallenge: result.won,
+  };
 }
