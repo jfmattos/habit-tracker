@@ -2,6 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
+import { HueSlider } from '@/components/hue-slider';
 import { SegmentedControl } from '@/components/segmented-control';
 import { ThemedText } from '@/components/themed-text';
 import { HabitColors } from '@/constants/habit-colors';
@@ -11,30 +12,36 @@ import { feedback } from '@/lib/feedback';
 import { ChallengeLengths } from '@/lib/habit-logic';
 import type { HabitKind } from '@/store/habits';
 
+/** The preset colors, plus a rainbow bar for any other color */
 export function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const isPreset = (HabitColors as readonly string[]).includes(value);
+
   return (
-    <View style={styles.colors}>
-      {HabitColors.map((option) => (
-        <Pressable
-          key={option}
-          onPress={() => {
-            feedback.select();
-            onChange(option);
-          }}
-          accessibilityLabel={`Color ${option}`}
-          accessibilityState={{ selected: option === value }}
-          style={[styles.swatchRing, option === value && { borderColor: option }]}>
-          <View style={[styles.swatch, { backgroundColor: option }]}>
-            {option === value && (
-              <SymbolView
-                name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                size={16}
-                tintColor="#ffffff"
-              />
-            )}
-          </View>
-        </Pressable>
-      ))}
+    <View style={styles.colorPicker}>
+      <View style={styles.colors}>
+        {HabitColors.map((option) => (
+          <Pressable
+            key={option}
+            onPress={() => {
+              feedback.select();
+              onChange(option);
+            }}
+            accessibilityLabel={`Color ${option}`}
+            accessibilityState={{ selected: option === value }}
+            style={[styles.swatchRing, option === value && { borderColor: option }]}>
+            <View style={[styles.swatch, { backgroundColor: option }]}>
+              {option === value && (
+                <SymbolView
+                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                  size={16}
+                  tintColor="#ffffff"
+                />
+              )}
+            </View>
+          </Pressable>
+        ))}
+      </View>
+      <HueSlider value={isPreset ? null : value} onChange={onChange} />
     </View>
   );
 }
@@ -190,7 +197,7 @@ export function ChallengePicker({
         <Switch
           value={value !== null}
           onValueChange={(enabled) => onChange(enabled ? ChallengeLengths[0] : null)}
-          trackColor={{ true: color }}
+          trackColor={{ true: color, false: theme.backgroundSelected }}
           thumbColor="#ffffff"
         />
       </View>
@@ -220,6 +227,9 @@ export function ChallengePicker({
 }
 
 const styles = StyleSheet.create({
+  colorPicker: {
+    gap: Spacing.three,
+  },
   colors: {
     flexDirection: 'row',
     flexWrap: 'wrap',
