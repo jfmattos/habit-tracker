@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BarChart } from '@/components/bar-chart';
 import { HabitBadge } from '@/components/habit-badge';
@@ -9,21 +9,21 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { addDays, dayLabel, todayKey } from '@/lib/dates';
+import { addDays, dayLabel, parseKey, todayKey } from '@/lib/dates';
 import { countOn, isDone } from '@/lib/habit-logic';
 import {
   bestStreak,
   currentStreak,
-  dailyRates,
   firstKey,
   habitPeriod,
+  lastDays,
   perfectDays,
+  periodTotals,
   totalCheckIns,
 } from '@/lib/stats';
 import { useHabits, type Habit } from '@/store/habits';
 
 const LOG_DAYS = 14;
-const PERFECT = '#30A46C';
 const PERIODS = [
   { value: 7, label: 'Last 7 days' },
   { value: 30, label: 'Last 30 days' },
@@ -42,14 +42,9 @@ export default function ProgressScreen() {
     );
   }
 
-  const rates = dailyRates(habits, period);
-  const tracked = rates.filter((day) => day.rate !== null);
-  const average = tracked.length
-    ? Math.round((tracked.reduce((sum, day) => sum + (day.rate ?? 0), 0) / tracked.length) * 100)
-    : 0;
+  const totals = periodTotals(habits, period);
   const trophies = habits.reduce((sum, habit) => sum + habit.wins.length, 0);
-  const today = todayKey();
-  const logDays = Array.from({ length: LOG_DAYS }, (_, index) => addDays(today, -index));
+  const logDays = Array.from({ length: LOG_DAYS }, (_, index) => addDays(todayKey(), -index));
 
   return (
     <ScrollView
@@ -57,41 +52,43 @@ export default function ProgressScreen() {
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.content}>
       <View style={styles.tiles}>
-        <Tile label="Perfect days" value={perfectDays(habits)} />
-        <Tile label="Check-ins" value={totalCheckIns(habits)} />
-        <Tile label="Best streak" value={Math.max(...habits.map(bestStreak))} />
-        <Tile label="Trophies" value={trophies} />
+        <Tile emoji="🌟" label="Perfect days" value={perfectDays(habits)} color="#30A46C" />
+        <Tile emoji="✅" label="Check-ins" value={totalCheckIns(habits)} color="#3E63DD" />
+        <Tile emoji="🔥" label="Best streak" value={Math.max(...habits.map(bestStreak))} color="#F76B15" />
+        <Tile emoji="🏆" label="Trophies" value={trophies} color="#D99A00" />
       </View>
 
       <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} />
 
       <ThemedView type="backgroundElement" style={styles.panel}>
         <View style={styles.panelHeader}>
-          <ThemedText type="smallBold" style={styles.panelTitle}>
-            Your progress
-          </ThemedText>
-          <ThemedText type="smallBold" style={{ color: PERFECT }}>
-            {average}% avg
-          </ThemedText>
+          <View style={styles.panelHeading}>
+            <ThemedText type="smallBold" style={styles.panelTitle}>
+              📈 Your progress
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {totals.done} of {totals.possible} habit days completed
+            </ThemedText>
+          </View>
+          <ThemedText style={styles.bigRate}>{Math.round(totals.rate * 100)}%</ThemedText>
         </View>
-        <ThemedText type="small" themeColor="textSecondary">
-          Share of your habits done each day. Green days are perfect days.
-        </ThemedText>
-        <BarChart
-          bars={rates.map((day) => ({
-            value: day.rate,
-            color: day.rate === 1 ? PERFECT : undefined,
-          }))}
-          color={theme.textSecondary}
-          height={period === 7 ? 120 : 96}
-          startLabel={dayLabel(rates[0].key)}
-          endLabel="Today"
-        />
+        <DayChart habits={habits} days={period} />
+        <View style={styles.legend}>
+          {habits.map((habit) => (
+            <View key={habit.id} style={styles.legendItem}>
+              <View style={[styles.legendSwatch, { backgroundColor: habit.color }]} />
+              <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                {habit.emoji ? `${habit.emoji} ` : ''}
+                {habit.name}
+              </ThemedText>
+            </View>
+          ))}
+        </View>
       </ThemedView>
 
       <ThemedView type="backgroundElement" style={styles.panel}>
         <ThemedText type="smallBold" style={styles.panelTitle}>
-          By habit
+          🎯 By habit
         </ThemedText>
         {habits.map((habit) => (
           <HabitProgress key={habit.id} habit={habit} days={period} />
@@ -100,7 +97,7 @@ export default function ProgressScreen() {
 
       <ThemedView type="backgroundElement" style={styles.panel}>
         <ThemedText type="smallBold" style={styles.panelTitle}>
-          Log
+          🗓️ Log
         </ThemedText>
         {logDays.map((key) => (
           <LogDay key={key} day={key} habits={habits} />
@@ -110,13 +107,102 @@ export default function ProgressScreen() {
   );
 }
 
+/**
+ * One stacked bar per day with a block per habit in its color: full blocks are habits done
+ * that day, short tinted blocks are partly done multi-check-in habits.
+ */
+function DayChart({ habits, days }: { habits: Habit[]; days: number }) {
+  const theme = useTheme();
+  const today = todayKey();
+  const week = days <= 7;
+  const keys = lastDays(days);
+  // Bottom-up stacking: the first habit sits at the bottom of each bar
+  const stack = [...habits].reverse();
+
+  return (
+    <View>
+      <View style={[styles.chart, { gap: week ? Spacing.two : 2 }]}>
+        {keys.map((key) => {
+          const done = habits.filter((habit) => isDone(habit, key)).length;
+          const perfect = done === habits.length;
+
+          return (
+            <View key={key} style={styles.column}>
+              {week && (
+                <Text style={[styles.columnTop, { color: perfect ? '#30A46C' : theme.textSecondary }]}>
+                  {perfect ? '⭐' : `${done}/${habits.length}`}
+                </Text>
+              )}
+              <View
+                style={[
+                  styles.slot,
+                  { height: week ? 140 : 110, backgroundColor: theme.backgroundSelected },
+                  perfect && !week && styles.perfectSlot,
+                ]}>
+                {stack.map((habit) => {
+                  const fraction = Math.min(1, countOn(habit, key) / habit.target);
+                  if (fraction === 0) return null;
+                  return (
+                    <View
+                      key={habit.id}
+                      style={{
+                        height: `${(fraction / habits.length) * 100}%`,
+                        backgroundColor: fraction === 1 ? habit.color : `${habit.color}59`,
+                      }}
+                    />
+                  );
+                })}
+              </View>
+              {week && (
+                <View style={styles.columnLabel}>
+                  <Text style={[styles.labelText, labelColor(key)]}>
+                    {parseKey(key).toLocaleDateString(undefined, { weekday: 'short' })}
+                  </Text>
+                  <Text style={[styles.labelText, labelColor(key)]}>{parseKey(key).getDate()}</Text>
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </View>
+
+      {!week && (
+        // Bars are too narrow for their own labels, so every 5th date (counting back from
+        // today) is centered under its bar on a separate row
+        <View style={styles.monthLabels}>
+          {keys.map((key, index) =>
+            (days - 1 - index) % 5 === 0 ? (
+              <Text
+                key={key}
+                style={[
+                  styles.labelText,
+                  styles.monthLabel,
+                  { left: `${((index + 0.5) / days) * 100}%` },
+                  labelColor(key),
+                ]}>
+                {parseKey(key).getDate()}
+              </Text>
+            ) : null
+          )}
+        </View>
+      )}
+    </View>
+  );
+
+  function labelColor(key: string) {
+    return key === today
+      ? [{ color: theme.text }, styles.labelToday]
+      : { color: theme.textSecondary };
+  }
+}
+
 function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
+  const theme = useTheme();
   const stats = habitPeriod(habit, days);
   const streak = currentStreak(habit);
   const details = [
-    `${stats.doneDays} of ${stats.trackedDays} days`,
+    `${stats.doneDays} of ${days} days`,
     habit.kind === 'count' ? `${stats.checkIns} check-ins` : null,
-    streak > 0 ? `🔥 ${streak} ${streak === 1 ? 'day' : 'days'} in a row` : 'No streak yet',
   ].filter(Boolean);
 
   return (
@@ -124,7 +210,7 @@ function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
       onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
       style={({ pressed }) => [styles.habit, pressed && styles.pressed]}>
       <View style={styles.habitHeader}>
-        <HabitBadge habit={habit} />
+        <HabitBadge habit={habit} size={36} />
         <View style={styles.habitText}>
           <ThemedText type="smallBold" numberOfLines={1}>
             {habit.name}
@@ -137,7 +223,19 @@ function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
           {Math.round(stats.rate * 100)}%
         </ThemedText>
       </View>
-      <BarChart bars={stats.bars.map((value) => ({ value }))} color={habit.color} height={28} />
+
+      <View style={[styles.rateTrack, { backgroundColor: theme.backgroundSelected }]}>
+        <View style={[styles.rateFill, { width: `${stats.rate * 100}%`, backgroundColor: habit.color }]} />
+      </View>
+
+      <View style={styles.habitFooter}>
+        <ThemedText type="small" themeColor={streak > 0 ? 'text' : 'textSecondary'}>
+          {streak > 0
+            ? `🔥 ${streak} ${streak === 1 ? 'day' : 'days'} in a row`
+            : '💤 No streak yet. Check in today!'}
+        </ThemedText>
+      </View>
+      <BarChart bars={stats.bars.map((value) => ({ value }))} color={habit.color} height={24} />
     </Pressable>
   );
 }
@@ -185,13 +283,18 @@ function LogDay({ day, habits }: { day: string; habits: Habit[] }) {
   );
 }
 
-function Tile({ label, value }: { label: string; value: number }) {
+function Tile({ emoji, label, value, color }: { emoji: string; label: string; value: number; color: string }) {
   return (
     <ThemedView type="backgroundElement" style={styles.tile}>
-      <ThemedText style={styles.tileValue}>{value}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {label}
-      </ThemedText>
+      <View style={[styles.tileIcon, { backgroundColor: `${color}2E` }]}>
+        <Text style={styles.tileEmoji}>{emoji}</Text>
+      </View>
+      <View>
+        <Text style={[styles.tileValue, { color }]}>{value}</Text>
+        <ThemedText type="small" themeColor="textSecondary">
+          {label}
+        </ThemedText>
+      </View>
     </ThemedView>
   );
 }
@@ -219,12 +322,25 @@ const styles = StyleSheet.create({
   tile: {
     flexGrow: 1,
     flexBasis: '40%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
     padding: Spacing.three,
     borderRadius: Spacing.three,
   },
+  tileIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileEmoji: {
+    fontSize: 22,
+  },
   tileValue: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 26,
+    lineHeight: 30,
     fontWeight: 700,
   },
   panel: {
@@ -236,12 +352,82 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  panelHeading: {
+    flex: 1,
   },
   panelTitle: {
     fontSize: 17,
   },
+  bigRate: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: 700,
+    color: '#30A46C',
+  },
+  chart: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  column: {
+    flex: 1,
+    alignItems: 'stretch',
+    gap: Spacing.one,
+  },
+  columnTop: {
+    fontSize: 11,
+    fontWeight: 600,
+    textAlign: 'center',
+  },
+  slot: {
+    borderRadius: 6,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  perfectSlot: {
+    borderTopWidth: 2,
+    borderColor: '#30A46C',
+  },
+  columnLabel: {
+    alignItems: 'center',
+  },
+  labelText: {
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: 'center',
+  },
+  monthLabels: {
+    height: 18,
+    marginTop: Spacing.one,
+  },
+  monthLabel: {
+    position: 'absolute',
+    width: 30,
+    marginLeft: -15,
+  },
+  labelToday: {
+    fontWeight: 700,
+  },
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.three,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    maxWidth: '100%',
+  },
+  legendSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
+  },
   habit: {
     gap: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   habitHeader: {
     flexDirection: 'row',
@@ -252,9 +438,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   habitRate: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: 700,
+  },
+  rateTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  rateFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  habitFooter: {
+    flexDirection: 'row',
   },
   logDay: {
     gap: Spacing.one,

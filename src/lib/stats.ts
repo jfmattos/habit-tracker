@@ -1,5 +1,5 @@
 import { addDays, dateKey, parseKey, todayKey, type Month } from '@/lib/dates';
-import { isDone } from '@/lib/habit-logic';
+import { countOn, isDone } from '@/lib/habit-logic';
 import type { Habit } from '@/store/habits';
 
 export function doneDaysInMonth(habit: Habit, { year, month }: Month) {
@@ -53,35 +53,38 @@ export function firstKey(habit: Habit) {
   return [dateKey(new Date(habit.createdAt)), ...Object.keys(habit.log)].sort()[0];
 }
 
-/** A habit's consistency over the last `days` days, only counting days since it existed */
-export function habitPeriod(habit: Habit, days: number) {
+/** Day keys for the last `days` days, oldest first, ending today */
+export function lastDays(days: number) {
   const today = todayKey();
-  const first = firstKey(habit);
-  const keys = Array.from({ length: days }, (_, index) => addDays(today, index - (days - 1)));
-  const tracked = keys.filter((key) => key >= first);
-  const doneDays = tracked.filter((key) => isDone(habit, key)).length;
+  return Array.from({ length: days }, (_, index) => addDays(today, index - (days - 1)));
+}
+
+/**
+ * A habit's consistency over the last `days` days. The rate is measured against the whole
+ * period: a habit done on 3 of the last 30 days is at 10%, however recently it was created.
+ */
+export function habitPeriod(habit: Habit, days: number) {
+  const keys = lastDays(days);
+  const doneDays = keys.filter((key) => isDone(habit, key)).length;
 
   return {
-    trackedDays: tracked.length,
     doneDays,
-    rate: tracked.length ? doneDays / tracked.length : 0,
-    checkIns: tracked.reduce((sum, key) => sum + (habit.log[key] ?? 0), 0),
-    /** Daily fraction of the target, oldest first; null before the habit existed */
-    bars: keys.map((key) => (key < first ? null : Math.min(1, (habit.log[key] ?? 0) / habit.target))),
+    rate: doneDays / days,
+    checkIns: keys.reduce((sum, key) => sum + countOn(habit, key), 0),
+    /** Daily fraction of the target, oldest first */
+    bars: keys.map((key) => Math.min(1, countOn(habit, key) / habit.target)),
   };
 }
 
-/** Share of habits done each day for the last `days` days, oldest first; null before any habit existed */
-export function dailyRates(habits: Habit[], days: number) {
-  const today = todayKey();
-  return Array.from({ length: days }, (_, index) => {
-    const key = addDays(today, index - (days - 1));
-    const existing = habits.filter((habit) => firstKey(habit) <= key);
-    const rate: number | null = existing.length
-      ? existing.filter((habit) => isDone(habit, key)).length / existing.length
-      : null;
-    return { key, rate };
-  });
+/** Habits done out of all habit-days in the period, e.g. 14 of 21 for 3 habits over 7 days */
+export function periodTotals(habits: Habit[], days: number) {
+  const keys = lastDays(days);
+  const done = habits.reduce(
+    (sum, habit) => sum + keys.filter((key) => isDone(habit, key)).length,
+    0
+  );
+  const possible = habits.length * days;
+  return { done, possible, rate: possible ? done / possible : 0 };
 }
 
 export function perfectDays(habits: Habit[]) {
