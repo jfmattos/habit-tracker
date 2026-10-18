@@ -32,7 +32,7 @@ export function CelebrationOverlay() {
             key={index}
             index={index}
             color={
-              celebration.kind === 'challenge' && index % 3 === 0
+              celebration.kind !== 'perfect-day' && index % 3 === 0
                 ? celebration.color
                 : HabitColors[index % HabitColors.length]
             }
@@ -42,6 +42,8 @@ export function CelebrationOverlay() {
         <ThemedView type="backgroundElement" style={styles.card}>
           {celebration.kind === 'challenge' ? (
             <ChallengeWon celebration={celebration} />
+          ) : celebration.kind === 'goal' ? (
+            <GoalMet celebration={celebration} />
           ) : (
             <PerfectDay count={celebration.count} />
           )}
@@ -93,6 +95,33 @@ function ChallengeWon({ celebration }: { celebration: Extract<Celebration, { kin
       <Pressable onPress={dismissCelebration} hitSlop={8}>
         <ThemedText type="small" themeColor="textSecondary">
           Not now
+        </ThemedText>
+      </Pressable>
+    </>
+  );
+}
+
+function GoalMet({ celebration }: { celebration: Extract<Celebration, { kind: 'goal' }> }) {
+  return (
+    <>
+      <PopIn symbol="🎯" />
+      <ThemedText type="subtitle" style={styles.center}>
+        {celebration.period === 'week' ? 'Weekly' : 'Monthly'} goal reached!
+      </ThemedText>
+      <ThemedText themeColor="textSecondary" style={styles.center}>
+        You did {celebration.emoji ? `${celebration.emoji} ` : ''}
+        {celebration.name} {celebration.target}× this {celebration.period}. That&apos;s a new
+        trophy 🏆
+      </ThemedText>
+      <Pressable
+        onPress={dismissCelebration}
+        style={({ pressed }) => [
+          styles.primary,
+          { backgroundColor: celebration.color },
+          pressed && styles.pressed,
+        ]}>
+        <ThemedText type="smallBold" style={styles.primaryText}>
+          Awesome
         </ThemedText>
       </Pressable>
     </>

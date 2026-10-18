@@ -11,6 +11,14 @@ export type Celebration =
       length: number;
     }
   | {
+      kind: 'goal';
+      name: string;
+      emoji: string;
+      color: string;
+      period: 'week' | 'month';
+      target: number;
+    }
+  | {
       kind: 'perfect-day';
       /** How many habits were completed */
       count: number;

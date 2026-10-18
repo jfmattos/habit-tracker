@@ -1,4 +1,5 @@
 import { addDays, dateKey, todayKey, weekStart, type Month } from '@/lib/dates';
+import { isSatisfied } from '@/lib/goals';
 import { countOn, isDone } from '@/lib/habit-logic';
 import type { Habit } from '@/store/habits';
 
@@ -94,7 +95,7 @@ export function perfectDays(habits: Habit[]) {
   let count = 0;
   for (let key = start; key <= today; key = addDays(key, 1)) {
     const existing = habits.filter((habit) => firstKey(habit) <= key);
-    if (existing.length && existing.every((habit) => isDone(habit, key))) count++;
+    if (existing.length && existing.every((habit) => isSatisfied(habit, key))) count++;
   }
   return count;
 }

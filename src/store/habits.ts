@@ -8,14 +8,31 @@ export type HabitKind = 'check' | 'count';
 
 export type Challenge = { length: number; startKey: string };
 
+/**
+ * What counts as meeting the habit's goal, and so earns a trophy:
+ * 'day' = `target` check-ins in a day; 'week' / 'month' = `target` done days in a calendar
+ * week (Monday to Sunday) or month.
+ */
+export type Goal = { period: 'day' | 'week' | 'month'; target: number };
+
+/** Daily tracking follows from the goal: only a per-day goal above 1 needs several check-ins a day */
+function trackingFor(goal: Goal): Pick<Habit, 'kind' | 'target'> {
+  return goal.period === 'day' && goal.target > 1
+    ? { kind: 'count', target: goal.target }
+    : { kind: 'check', target: 1 };
+}
+
 export type Habit = {
   id: string;
   name: string;
   /** May be empty for habits created before emojis existed */
   emoji: string;
   color: string;
+  /** Derived from `goal` (see trackingFor); kept for the daily check-in logic */
   kind: HabitKind;
+  /** Check-ins needed for a day to count as done */
   target: number;
+  goal: Goal;
   /** Check-ins per day, keyed by YYYY-MM-DD */
   log: Record<string, number>;
   challenge: Challenge | null;
@@ -38,6 +55,7 @@ function migrate(raw: unknown): Habit[] {
     color: habit.color,
     kind: habit.kind ?? 'check',
     target: habit.target ?? 1,
+    goal: habit.goal ?? { period: 'day', target: habit.target ?? 1 },
     log: habit.log ?? Object.fromEntries(Object.keys(habit.days ?? {}).map((key) => [key, 1])),
     challenge: habit.challenge ?? null,
     wins: habit.wins ?? [],
@@ -71,7 +89,7 @@ function settle(habit: Habit): { habit: Habit; won: number | null } {
   return { habit: { ...habit, challenge: null, wins: [...habit.wins, won] }, won };
 }
 
-export type HabitInput = Pick<Habit, 'name' | 'emoji' | 'color' | 'kind' | 'target'> & {
+export type HabitInput = Pick<Habit, 'name' | 'emoji' | 'color' | 'goal'> & {
   /** null for no challenge */
   challengeLength: number | null;
 };
@@ -80,7 +98,7 @@ export function addHabit({ challengeLength, ...input }: HabitInput) {
   const habit: Habit = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     ...input,
-    target: input.kind === 'check' ? 1 : input.target,
+    ...trackingFor(input.goal),
     log: {},
     challenge: challengeLength ? { length: challengeLength, startKey: todayKey() } : null,
     wins: [],
@@ -101,12 +119,7 @@ export function updateHabit(id: string, { challengeLength, ...input }: HabitInpu
     ? { length: challengeLength, startKey: running?.startKey ?? todayKey() }
     : null;
 
-  const result = settle({
-    ...habit,
-    ...input,
-    target: input.kind === 'check' ? 1 : input.target,
-    challenge,
-  });
+  const result = settle({ ...habit, ...input, ...trackingFor(input.goal), challenge });
   update(id, () => result.habit);
   return result.won;
 }

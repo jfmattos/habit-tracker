@@ -20,6 +20,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { cycleDay, logOnce, undoOnce } from '@/lib/check-in';
 import { currentMonth, todayKey } from '@/lib/dates';
+import { goalProgress, periodLabel } from '@/lib/goals';
 import { challengeState, countOn } from '@/lib/habit-logic';
 import { currentStreak, doneDaysInMonth } from '@/lib/stats';
 import { startChallenge, type Habit, type LogResult } from '@/store/habits';
@@ -35,6 +36,7 @@ export function HabitCard({ habit }: { habit: Habit }) {
   const done = count >= habit.target;
   const streak = currentStreak(habit);
   const challenge = challengeState(habit);
+  const goal = goalProgress(habit);
 
   function celebrateIfDone(result: LogResult) {
     if (result.goalReached) {
@@ -72,7 +74,11 @@ export function HabitCard({ habit }: { habit: Habit }) {
             </ThemedText>
           </View>
           <ThemedText type="small" themeColor="textSecondary">
-            {streak > 1 ? `🔥 ${streak}-day streak` : `${doneDaysInMonth(habit, currentMonth())} days this month`}
+            {habit.goal.period !== 'day'
+              ? `🎯 ${Math.min(goal.done, goal.target)}/${goal.target} ${periodLabel(habit.goal.period)}${goal.met ? ' ✓' : ''}`
+              : streak > 1
+                ? `🔥 ${streak}-day streak`
+                : `${doneDaysInMonth(habit, currentMonth())} days this month`}
           </ThemedText>
 
           {challenge?.status === 'active' && (

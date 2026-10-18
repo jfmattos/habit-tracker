@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { addDays, dayLabel, daysBetween, parseKey, todayKey, weekStart } from '@/lib/dates';
+import { goalLabel, goalsMet } from '@/lib/goals';
 import { countOn, isDone } from '@/lib/habit-logic';
 import {
   bestStreak,
@@ -65,6 +66,12 @@ function Overview({ habits }: { habits: Habit[] }) {
   const totals = periodTotals(habits, period);
   const perfect = perfectDays(habits);
   const challengesWon = habits.reduce((sum, habit) => sum + habit.wins.length, 0);
+  const goals = habits.reduce((sum, habit) => sum + goalsMet(habit), 0);
+  const trophyParts = [
+    `${challengesWon} ${challengesWon === 1 ? 'challenge' : 'challenges'}`,
+    `${perfect} perfect ${perfect === 1 ? 'day' : 'days'}`,
+    `${goals} ${goals === 1 ? 'goal' : 'goals'}`,
+  ];
 
   return (
     <>
@@ -75,8 +82,8 @@ function Overview({ habits }: { habits: Habit[] }) {
         <Tile
           emoji="🏆"
           label="Trophies"
-          value={challengesWon + perfect}
-          detail={`${challengesWon} ${challengesWon === 1 ? 'challenge' : 'challenges'} + ${perfect} perfect ${perfect === 1 ? 'day' : 'days'}`}
+          value={challengesWon + perfect + goals}
+          detail={trophyParts.join(' + ')}
           color="#D99A00"
         />
       </View>
@@ -283,6 +290,7 @@ function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
   const theme = useTheme();
   const stats = habitPeriod(habit, days);
   const streak = currentStreak(habit);
+  const met = goalsMet(habit);
   const details = [
     `${stats.doneDays} of ${days} days`,
     habit.kind === 'count' ? `${stats.checkIns} check-ins` : null,
@@ -316,6 +324,9 @@ function HabitProgress({ habit, days }: { habit: Habit; days: number }) {
           {streak > 0
             ? `🔥 ${streak} ${streak === 1 ? 'day' : 'days'} in a row`
             : '💤 No streak yet. Check in today!'}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          🎯 {goalLabel(habit.goal)} · met {met}×
         </ThemedText>
       </View>
       <BarChart bars={stats.bars.map((value) => ({ value }))} color={habit.color} height={24} />
@@ -570,7 +581,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   habitFooter: {
-    flexDirection: 'row',
+    gap: Spacing.half,
   },
   logDay: {
     gap: Spacing.one,

@@ -10,7 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { feedback } from '@/lib/feedback';
 import { ChallengeLengths } from '@/lib/habit-logic';
-import type { HabitKind } from '@/store/habits';
+import type { Goal } from '@/store/habits';
 
 /** The preset colors, plus a rainbow bar for any other color */
 export function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
@@ -47,11 +47,13 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
 }
 
 const EMOJIS = [
-  '📚', '💧', '💪', '🧘', '✍️', '🚶', '🏃', '🥗', '😴', '💊', '🎸', '🎨',
-  '🧹', '💻', '🙏', '🌱', '🍎', '🚭', '📵', '💰', '🧠', '☀️', '🦷', '🎯',
+  '🎯', '📚', '💧', '💪', '🧘', '✍️', '🚶', '🏃', '🚴', '🏊', '🥗', '🍎',
+  '🥦', '☕', '😴', '💊', '🦷', '🧴', '🧠', '📖', '🗣️', '🎸', '🎹', '🎨',
+  '📷', '🧹', '🧺', '🪴', '🌱', '🐶', '💻', '📝', '📵', '🚭', '🍷', '💰',
+  '🙏', '❤️', '☀️', '🌙',
 ];
 
-/** A scrollable row of common emojis, plus a field to type any other emoji */
+/** A scrollable row of common emojis; the dashed "+" at the end takes any other typed emoji */
 export function EmojiPicker({
   value,
   color,
@@ -62,28 +64,13 @@ export function EmojiPicker({
   onChange: (emoji: string) => void;
 }) {
   const theme = useTheme();
+  // A typed emoji that isn't in the list is shown first, so the current choice is always visible
   const custom = value && !EMOJIS.includes(value) ? value : '';
+  const options = custom ? [custom, ...EMOJIS] : EMOJIS;
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojis}>
-      <TextInput
-        value={custom}
-        onChangeText={(text) => {
-          // Keep only the last character typed (emoji can be several code units long)
-          const last = Array.from(text.trim()).slice(-1)[0] ?? '';
-          onChange(last);
-        }}
-        placeholder="✏️"
-        placeholderTextColor={theme.textSecondary}
-        accessibilityLabel="Type your own emoji"
-        style={[
-          styles.emoji,
-          styles.emojiInput,
-          { backgroundColor: custom ? `${color}33` : theme.backgroundElement },
-          custom ? { borderColor: color } : null,
-        ]}
-      />
-      {EMOJIS.map((emoji) => (
+      {options.map((emoji) => (
         <Pressable
           key={emoji}
           onPress={() => {
@@ -100,30 +87,75 @@ export function EmojiPicker({
           <Text style={styles.emojiText}>{emoji}</Text>
         </Pressable>
       ))}
+      <TextInput
+        value=""
+        onChangeText={(text) => {
+          // Keep only the last character typed (emoji can be several code units long)
+          const last = Array.from(text.trim()).slice(-1)[0];
+          if (last) onChange(last);
+        }}
+        placeholder="+"
+        placeholderTextColor={theme.textSecondary}
+        accessibilityLabel="Type your own emoji"
+        style={[styles.emoji, styles.emojiInput, { borderColor: theme.textSecondary, color: theme.text }]}
+      />
     </ScrollView>
   );
 }
 
-export function KindPicker({ value, onChange }: { value: HabitKind; onChange: (kind: HabitKind) => void }) {
-  return (
-    <SegmentedControl
-      options={[
-        { value: 'check', label: 'Once a day' },
-        { value: 'count', label: 'Several times' },
-      ]}
-      value={value}
-      onChange={onChange}
-    />
-  );
-}
+type GoalMode = 'once' | Goal['period'];
 
-export function TargetStepper({ value, onChange }: { value: number; onChange: (target: number) => void }) {
+const GOAL_MODES: { value: GoalMode; label: string }[] = [
+  { value: 'once', label: 'Once a day' },
+  { value: 'day', label: 'Per day' },
+  { value: 'week', label: 'Per week' },
+  { value: 'month', label: 'Per month' },
+];
+
+const GOAL_LIMITS: Record<Goal['period'], { min: number; max: number; initial: number }> = {
+  day: { min: 2, max: 20, initial: 3 },
+  week: { min: 1, max: 7, initial: 3 },
+  month: { min: 1, max: 31, initial: 20 },
+};
+
+/** The habit's goal: how often, and how many times per day, week or month */
+export function GoalPicker({ value, onChange }: { value: Goal; onChange: (goal: Goal) => void }) {
+  const mode: GoalMode = value.period === 'day' && value.target === 1 ? 'once' : value.period;
+
+  function changeMode(next: GoalMode) {
+    onChange(
+      next === 'once'
+        ? { period: 'day', target: 1 }
+        : { period: next, target: GOAL_LIMITS[next].initial }
+    );
+  }
+
+  const description =
+    mode === 'once'
+      ? 'Check in once a day. Every day you do it earns a trophy.'
+      : mode === 'day'
+        ? `Check in ${value.target} times a day. Every day you reach ${value.target} earns a trophy.`
+        : `Check in on ${value.target} ${value.target === 1 ? 'day' : 'days'} each ${mode === 'week' ? 'week (Monday to Sunday)' : 'month'}. Every ${mode} you reach it earns a trophy.`;
+
   return (
-    <View style={styles.row}>
+    <View style={styles.goal}>
+      <SegmentedControl options={GOAL_MODES} value={mode} onChange={changeMode} />
+      {mode !== 'once' && (
+        <View style={styles.row}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {mode === 'day' ? 'Times per day' : `Days per ${mode}`}
+          </ThemedText>
+          <Stepper
+            value={value.target}
+            min={GOAL_LIMITS[mode].min}
+            max={GOAL_LIMITS[mode].max}
+            onChange={(target) => onChange({ period: mode, target })}
+          />
+        </View>
+      )}
       <ThemedText type="small" themeColor="textSecondary">
-        Times per day
+        {description}
       </ThemedText>
-      <Stepper value={value} min={2} max={20} onChange={onChange} />
     </View>
   );
 }
@@ -265,6 +297,10 @@ const styles = StyleSheet.create({
     fontSize: 22,
     textAlign: 'center',
     padding: 0,
+    borderStyle: 'dashed',
+  },
+  goal: {
+    gap: Spacing.three,
   },
   emojiText: {
     fontSize: 22,

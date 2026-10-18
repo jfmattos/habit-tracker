@@ -1,6 +1,7 @@
 import { todayKey } from '@/lib/dates';
 import { feedback } from '@/lib/feedback';
-import { countOn, isDone } from '@/lib/habit-logic';
+import { goalProgress, isSatisfied } from '@/lib/goals';
+import { countOn } from '@/lib/habit-logic';
 import { celebrate } from '@/store/celebration';
 import { getHabits, setCount, type Habit, type LogResult } from '@/store/habits';
 
@@ -16,14 +17,32 @@ export function celebrateChallenge(habit: Habit, length: number) {
   });
 }
 
-/** Fires the reward for a logged change: sound + haptics, and a celebration for big moments */
+/**
+ * Fires the reward for a logged change: sound + haptics, and a celebration for big moments.
+ * Priority: challenge won > weekly/monthly goal met > perfect day > daily goal > progress.
+ */
 function reward(habit: Habit, key: string, result: LogResult) {
   const habits = getHabits();
+  const updated = habits.find((item) => item.id === habit.id) ?? habit;
+  const { period, target } = updated.goal;
+  // The check-in that brings a week or month to exactly its target is the one that met it
+  const periodGoalMet =
+    result.goalReached && period !== 'day' && goalProgress(updated, key).done === target;
   const perfectDay =
-    result.goalReached && key === todayKey() && habits.every((item) => isDone(item, key));
+    result.goalReached && key === todayKey() && habits.every((item) => isSatisfied(item, key));
 
   if (result.wonChallenge) {
     celebrateChallenge(habit, result.wonChallenge);
+  } else if (periodGoalMet) {
+    feedback.win();
+    celebrate({
+      kind: 'goal',
+      name: habit.name,
+      emoji: habit.emoji,
+      color: habit.color,
+      period,
+      target,
+    });
   } else if (perfectDay) {
     feedback.win();
     celebrate({ kind: 'perfect-day', count: habits.length });

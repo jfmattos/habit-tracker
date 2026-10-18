@@ -1,7 +1,8 @@
 import * as Notifications from 'expo-notifications';
 
 import { addDays, daysBetween, parseKey, todayKey } from '@/lib/dates';
-import { challengeState, countOn, isDone } from '@/lib/habit-logic';
+import { isSatisfied } from '@/lib/goals';
+import { challengeState, countOn } from '@/lib/habit-logic';
 import { getHabits, type Habit } from '@/store/habits';
 import { getSettings } from '@/store/settings';
 
@@ -52,7 +53,7 @@ function challengeOn(habits: Habit[], key: string) {
 
 function messages(habits: Habit[], key: string, today: string) {
   // Future days might be done by the time they fire, so only today's list is filtered
-  const pending = key === today ? habits.filter((habit) => !isDone(habit, key)) : habits;
+  const pending = key === today ? habits.filter((habit) => !isSatisfied(habit, key)) : habits;
   if (pending.length === 0) return null;
 
   const challenge = challengeOn(pending, key);

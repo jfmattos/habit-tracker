@@ -19,18 +19,18 @@ import { useTheme } from '@/hooks/use-theme';
 import { feedback } from '@/lib/feedback';
 import { ChallengeTiers } from '@/lib/habit-logic';
 import { remindersSupported, requestReminderPermission } from '@/lib/reminders';
-import { addHabit, type HabitKind } from '@/store/habits';
+import { addHabit, type Goal } from '@/store/habits';
 import { updateSettings } from '@/store/settings';
 
-type Choice = { name: string; emoji: string; kind: HabitKind; target: number; color: string };
+type Choice = { name: string; emoji: string; goal: Goal; color: string };
 
 const SUGGESTIONS: Choice[] = [
-  { name: 'Read 10 pages', emoji: '📚', kind: 'check', target: 1, color: HabitColors[4] },
-  { name: 'Drink water', emoji: '💧', kind: 'count', target: 8, color: HabitColors[3] },
-  { name: 'Workout', emoji: '💪', kind: 'check', target: 1, color: HabitColors[2] },
-  { name: 'Meditate', emoji: '🧘', kind: 'check', target: 1, color: HabitColors[5] },
-  { name: 'Journal', emoji: '✍️', kind: 'check', target: 1, color: HabitColors[1] },
-  { name: 'Walk outside', emoji: '🚶', kind: 'check', target: 1, color: HabitColors[7] },
+  { name: 'Read 10 pages', emoji: '📚', goal: { period: 'day', target: 1 }, color: HabitColors[4] },
+  { name: 'Drink water', emoji: '💧', goal: { period: 'day', target: 8 }, color: HabitColors[3] },
+  { name: 'Workout', emoji: '💪', goal: { period: 'day', target: 1 }, color: HabitColors[2] },
+  { name: 'Meditate', emoji: '🧘', goal: { period: 'day', target: 1 }, color: HabitColors[5] },
+  { name: 'Journal', emoji: '✍️', goal: { period: 'day', target: 1 }, color: HabitColors[1] },
+  { name: 'Walk outside', emoji: '🚶', goal: { period: 'day', target: 1 }, color: HabitColors[7] },
 ];
 
 const FIRST_CHALLENGE = ChallengeTiers[0];
@@ -43,7 +43,7 @@ export default function OnboardingScreen() {
   const steps = remindersSupported ? 4 : 3;
 
   const habit: Choice | null = custom.trim()
-    ? { name: custom.trim(), emoji: '✨', kind: 'check', target: 1, color: HabitColors[0] }
+    ? { name: custom.trim(), emoji: '✨', goal: { period: 'day', target: 1 }, color: HabitColors[0] }
     : choice;
   const color = habit?.color ?? theme.text;
 
@@ -126,7 +126,7 @@ export default function OnboardingScreen() {
                           type="smallBold"
                           style={{ color: selected ? '#ffffff' : theme.text }}>
                           {suggestion.emoji} {suggestion.name}
-                          {suggestion.kind === 'count' ? ` · ${suggestion.target}×` : ''}
+                          {suggestion.goal.target > 1 ? ` · ${suggestion.goal.target}×` : ''}
                         </ThemedText>
                       </Pressable>
                     );

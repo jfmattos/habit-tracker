@@ -9,7 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { todayKey } from '@/lib/dates';
-import { isDone } from '@/lib/habit-logic';
+import { isSatisfied } from '@/lib/goals';
 import { useHabits } from '@/store/habits';
 import { useSettings } from '@/store/settings';
 
@@ -23,7 +23,7 @@ export default function TodayScreen() {
   }
 
   const today = todayKey();
-  const doneCount = habits.filter((habit) => isDone(habit, today)).length;
+  const doneCount = habits.filter((habit) => isSatisfied(habit, today)).length;
   const allDone = habits.length > 0 && doneCount === habits.length;
 
   return (
@@ -73,7 +73,7 @@ export default function TodayScreen() {
                     style={[
                       styles.segment,
                       {
-                        backgroundColor: isDone(habit, today) ? habit.color : theme.backgroundElement,
+                        backgroundColor: isSatisfied(habit, today) ? habit.color : theme.backgroundElement,
                       },
                     ]}
                   />

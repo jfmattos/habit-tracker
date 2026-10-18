@@ -21,6 +21,7 @@ import {
   parseKey,
   todayKey,
 } from '@/lib/dates';
+import { goalLabel, goalProgress, goalsMet, periodLabel } from '@/lib/goals';
 import { challengeState, countOn, nextChallengeLength } from '@/lib/habit-logic';
 import { bestStreak, currentStreak, doneDaysInMonth, weeklyDone } from '@/lib/stats';
 import { deleteHabit, startChallenge, useHabit, type Habit } from '@/store/habits';
@@ -55,7 +56,11 @@ function HabitDetail({ habit }: { habit: Habit }) {
   function confirmDelete() {
     const remove = () => {
       deleteHabit(habit.id);
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/');
+      }
     };
     const message = `Delete "${habit.name}" and all of its history?`;
     if (Platform.OS === 'web') {
@@ -77,15 +82,23 @@ function HabitDetail({ habit }: { habit: Habit }) {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <IconButton
-              icon={{ ios: 'pencil', android: 'edit', web: 'edit' }}
-              label="Edit habit"
-              onPress={() => router.push({ pathname: '/habit-form', params: { id: habit.id } })}
-            />
+            <View style={styles.headerActions}>
+              <IconButton
+                icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                label="Delete habit"
+                onPress={confirmDelete}
+              />
+              <IconButton
+                icon={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+                label="Edit habit"
+                onPress={() => router.push({ pathname: '/habit-form', params: { id: habit.id } })}
+              />
+            </View>
           ),
         }}
       />
 
+      <GoalPanel habit={habit} />
       <ChallengePanel habit={habit} />
 
       <ThemedView type="backgroundElement" style={styles.panel}>
@@ -155,20 +168,48 @@ function HabitDetail({ habit }: { habit: Habit }) {
           endLabel="This week"
         />
       </ThemedView>
-
-      <View style={styles.actions}>
-        <Pressable
-          onPress={() => router.push({ pathname: '/habit-form', params: { id: habit.id } })}
-          style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
-          <ThemedText type="smallBold">Edit habit</ThemedText>
-        </Pressable>
-        <Pressable onPress={confirmDelete} style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
-          <ThemedText type="smallBold" style={styles.deleteText}>
-            Delete habit
-          </ThemedText>
-        </Pressable>
-      </View>
     </ScrollView>
+  );
+}
+
+function GoalPanel({ habit }: { habit: Habit }) {
+  const theme = useTheme();
+  const progress = goalProgress(habit);
+  const met = goalsMet(habit);
+  // One segment per time needed, capped so long monthly goals still fit as a bar
+  const segments = Math.min(progress.target, 14);
+
+  return (
+    <ThemedView type="backgroundElement" style={styles.panel}>
+      <View style={styles.challengeHeader}>
+        <ThemedText type="smallBold" style={styles.panelTitle}>
+          🎯 Goal: {goalLabel(habit.goal)}
+        </ThemedText>
+        <ThemedText type="smallBold" style={{ color: habit.color }}>
+          {progress.met ? '✓ ' : ''}
+          {Math.min(progress.done, progress.target)}/{progress.target} {periodLabel(habit.goal.period)}
+        </ThemedText>
+      </View>
+      <View style={styles.goalTrack}>
+        {Array.from({ length: segments }, (_, index) => {
+          const filled = (index + 1) / segments <= progress.done / progress.target;
+          return (
+            <View
+              key={index}
+              style={[
+                styles.goalSegment,
+                { backgroundColor: filled ? habit.color : theme.backgroundSelected },
+              ]}
+            />
+          );
+        })}
+      </View>
+      <ThemedText type="small" themeColor="textSecondary">
+        {met > 0
+          ? `🏆 Goal met ${met} ${met === 1 ? 'time' : 'times'}. Each one is a trophy.`
+          : 'Meet your goal to earn your first trophy 🏆'}
+      </ThemedText>
+    </ThemedView>
   );
 }
 
@@ -300,16 +341,18 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     fontWeight: 700,
   },
-  actions: {
+  headerActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: Spacing.four,
+    gap: Spacing.two,
   },
-  action: {
-    padding: Spacing.three,
+  goalTrack: {
+    flexDirection: 'row',
+    gap: 4,
   },
-  deleteText: {
-    color: '#E5484D',
+  goalSegment: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
   },
   pressed: {
     opacity: 0.7,

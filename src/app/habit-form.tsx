@@ -2,13 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import {
-  ChallengePicker,
-  ColorPicker,
-  EmojiPicker,
-  KindPicker,
-  TargetStepper,
-} from '@/components/habit-fields';
+import { ChallengePicker, ColorPicker, EmojiPicker, GoalPicker } from '@/components/habit-fields';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { HabitColors } from '@/constants/habit-colors';
@@ -16,7 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { celebrateChallenge } from '@/lib/check-in';
 import { ChallengeTiers, challengeState } from '@/lib/habit-logic';
-import { addHabit, getHabits, updateHabit, useHabit, type HabitKind } from '@/store/habits';
+import { addHabit, getHabits, updateHabit, useHabit, type Goal } from '@/store/habits';
 
 function close() {
   if (router.canGoBack()) {
@@ -36,8 +30,7 @@ export default function HabitFormScreen() {
   const [name, setName] = useState(habit?.name ?? '');
   const [emoji, setEmoji] = useState(habit?.emoji ?? '🎯');
   const [color, setColor] = useState<string>(habit?.color ?? HabitColors[0]);
-  const [kind, setKind] = useState<HabitKind>(habit?.kind ?? 'check');
-  const [target, setTarget] = useState(habit && habit.kind === 'count' ? habit.target : 3);
+  const [goal, setGoal] = useState<Goal>(habit?.goal ?? { period: 'day', target: 1 });
   const [challengeLength, setChallengeLength] = useState<number | null>(
     habit ? (running?.status === 'active' ? running.length : null) : ChallengeTiers[0]
   );
@@ -45,7 +38,7 @@ export default function HabitFormScreen() {
 
   function save() {
     if (!canSave) return;
-    const input = { name: name.trim(), emoji, color, kind, target, challengeLength };
+    const input = { name: name.trim(), emoji, color, goal, challengeLength };
     if (habit) {
       const won = updateHabit(habit.id, input);
       const updated = getHabits().find((item) => item.id === habit.id);
@@ -86,9 +79,8 @@ export default function HabitFormScreen() {
           <EmojiPicker value={emoji} color={color} onChange={setEmoji} />
         </Field>
 
-        <Field label="How often">
-          <KindPicker value={kind} onChange={setKind} />
-          {kind === 'count' && <TargetStepper value={target} onChange={setTarget} />}
+        <Field label="Goal">
+          <GoalPicker value={goal} onChange={setGoal} />
         </Field>
 
         <Field label="Color">
