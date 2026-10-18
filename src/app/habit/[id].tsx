@@ -74,6 +74,17 @@ function HabitDetail({ habit }: { habit: Habit }) {
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.content}>
       <Stack.Title>{habit.emoji ? `${habit.emoji} ${habit.name}` : habit.name}</Stack.Title>
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <IconButton
+              icon={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+              label="Edit habit"
+              onPress={() => router.push({ pathname: '/habit-form', params: { id: habit.id } })}
+            />
+          ),
+        }}
+      />
 
       <ChallengePanel habit={habit} />
 

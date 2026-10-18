@@ -44,7 +44,7 @@ Do not run `npm run reset-project`: it is the leftover template script and would
 
 ## Architecture
 
-- **Routing** (`src/app/`): a single root `Stack` in `_layout.tsx`, with no tabs. `index` (Today) redirects to `onboarding` when `settings.onboarded` is false and there are no habits. `habit/[id]` sets its title with `<Stack.Title>`. `habit-form` creates a habit, or edits one when opened with `?id=`. It is a `formSheet` with `fitToContents`, so its root view must not use `flex: 1`. The root layout also renders `CelebrationOverlay` and keeps reminders in sync with the stores.
+- **Routing** (`src/app/`): a single root `Stack` in `_layout.tsx`, with no tabs. `index` (Today) redirects to `onboarding` when `settings.onboarded` is false and there are no habits. `habit/[id]` sets its title with `<Stack.Title>` and has a pencil button on the right of its header that opens the edit form. `habit-form` creates a habit, or edits one when opened with `?id=`. It is presented as a standard `modal` with a scrolling form. Don't present it as a full-height `formSheet`: scrolling content inside one didn't work on iOS in Expo Go. The root layout also renders `CelebrationOverlay` and keeps reminders in sync with the stores.
 - **Stores** (`src/store/`): `create-store.ts` provides `createStore` and `createPersistentStore`. Each store is a module-level value read through `useSyncExternalStore`, with no provider. There are three:
   - `habits.ts`, saved under the `localStorage` key `habits`, with a `migrate` function for older formats.
   - `settings.ts`, saved under `settings`: onboarding, reminders, reminder hours, sound and haptics.

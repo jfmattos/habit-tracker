@@ -41,14 +41,9 @@ export default function RootLayout() {
         <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Today' }} />
         <Stack.Screen
           name="habit-form"
-          options={{
-            presentation: 'formSheet',
-            headerShown: false,
-            // The form is taller than most screens, so it opens full height and scrolls
-            sheetAllowedDetents: [1],
-            sheetGrabberVisible: true,
-            sheetCornerRadius: 24,
-          }}
+          // A standard modal, not a formSheet: the form scrolls, and scrolling content
+          // inside a full-height formSheet didn't work on iOS
+          options={{ presentation: 'modal', headerShown: false }}
         />
       </Stack>
       <CelebrationOverlay />
