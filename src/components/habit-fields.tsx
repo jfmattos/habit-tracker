@@ -178,6 +178,8 @@ export function GoalPicker({ value, onChange }: { value: Goal; onChange: (goal: 
   const mode: GoalMode = value.period === 'day' && value.target === 1 ? 'once' : value.period;
 
   function changeMode(next: GoalMode) {
+    // Re-tapping the current option keeps the chosen count instead of resetting it
+    if (next === mode) return;
     onChange(
       next === 'once'
         ? { period: 'day', target: 1 }
